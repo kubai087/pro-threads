@@ -12,12 +12,12 @@
  *              ?layout=left|center (instead of the scene's own)
  * Keys: H toggles the panel, Space pauses.
  */
-import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
-import * as Essentials from 'https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.2.1/dist/tweakpane-plugin-essentials.min.js';
 import { PALETTES } from '../palettes.js';
 import { menu } from '../menu.js';
 import { addLanguage, language } from '../i18n.js';
-import { params, embedded, save, pageUrl, format, slug as paletteSlug } from '../persist.js';
+import { params, embedded, calm, announce, number, save, pageUrl, format, slug as paletteSlug } from '../persist.js';
+import { getGL, fail } from '../webgl.js';
+import { createPane } from '../panel.js';
 import { createPacer } from '../pace.js';
 import { addEmbed } from '../share.js';
 import { SHAPES } from './shapes.js';
@@ -27,7 +27,7 @@ import {
 } from './shaders.js';
 
 const canvas = document.getElementById('hero');
-const still = params.has('t') ? Number(params.get('t')) : null;
+const still = number(params.get('t')) ?? null;
 if (params.get('ui') === '0') document.body.dataset.ui = 'off';
 
 // ---------- Scenes ----------
@@ -101,10 +101,18 @@ const state = { ...DEFAULTS };
 state.scene = Object.keys(SCENES).find((k) => slug(k) === params.get('scene')) ?? state.scene;
 state.palette = Object.keys(PALETTES).find((k) => paletteSlug(k) === params.get('palette')) ?? state.palette;
 state.layout = LAYOUTS.find((k) => k.toLowerCase() === params.get('layout')) ?? state.layout;
+// What a value from the URL is held to: the panel's own ranges (so a typo
+// can't stop the drawing, or a huge resolution exhaust the GPU).
+const LIMITS = {
+  speed: [0, 3], spin: [0, 3], zoom: [0.5, 2], threads: [0.4, 2.5], sheen: [0, 2], gain: [0.6, 2.4],
+  contrast: [0.6, 1.8], saturation: [0, 2], warm: [0, 1], sparkle: [0, 3], glow: [0, 2.5],
+  threshold: [0.2, 0.95], quality: [0.4, 1], fps: [10, 240],
+};
 for (const [key, fallback] of Object.entries(DEFAULTS)) {
   if (!params.has(key) || typeof fallback === 'string') continue;
-  state[key] = typeof fallback === 'boolean' ? params.get(key) !== '0' : Number(params.get(key));
+  state[key] = typeof fallback === 'boolean' ? params.get(key) !== '0' : number(params.get(key), LIMITS[key]) ?? state[key];
 }
+if (calm) state.paused = true;
 
 // What goes in the URL: every setting that differs from the defaults
 // (the resolution not while the page sets it itself).
@@ -166,7 +174,7 @@ const wander = (t) => [
 
 // ---------- WebGL ----------
 
-const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: still !== null });
+const gl = getGL(canvas, { antialias: false, preserveDrawingBuffer: still !== null });
 
 function program(vert, frag) {
   const p = gl.createProgram();
@@ -174,13 +182,13 @@ function program(vert, frag) {
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
     gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(`a shader did not compile: ${gl.getShaderInfoLog(s)}`);
     gl.attachShader(p, s);
   }
   // Every full-screen program reads its corner at location 0.
   gl.bindAttribLocation(p, 0, 'aPos');
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail(`the shaders did not link: ${gl.getProgramInfoLog(p)}`);
   const u = {};
   const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
   for (let i = 0; i < n; i++) {
@@ -403,6 +411,7 @@ function drawScene() {
 }
 
 function draw() {
+  if (gl.isContextLost()) return;
   makeTargets(canvas.width, canvas.height);
   drawScene();
   // Resolve the multisampled picture into a texture.
@@ -488,8 +497,7 @@ function savePng() {
 
 // ---------- Panel ----------
 
-const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
-pane.registerPlugin(Essentials);
+const pane = await createPane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
 const opts = (keys) => Object.fromEntries(keys.map((k) => [k, k]));
 // The same tabs as the wallpaper's: PRO and A–Z go back to it, taking the
 // palette along; Shapes is this page.
@@ -589,5 +597,6 @@ resize();
 // The first frame is drawn straight away, whether or not the page is shown
 // yet; after that the pacer decides.
 draw();
+announce();
 if (still === null) requestAnimationFrame(frame);
 window.__hero = { state, draw, pane };

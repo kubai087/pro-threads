@@ -42,6 +42,21 @@ if (embedded) {
   document.body.dataset.embed = '';
 }
 
+// Embedded for someone who asked for less motion: the scene holds still.
+export const calm = embedded && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Tells the page an embedded scene sits in that it has drawn (or fallen
+// back to its still), so <pro-threads> can show it.
+export function announce() {
+  if (embedded && parent !== window) parent.postMessage({ type: 'pro-threads:ready' }, '*');
+}
+
+// A number from the URL, kept within [min, max]; undefined if it isn't one.
+export function number(raw, [min, max] = [-Infinity, Infinity]) {
+  const value = Number(raw);
+  return raw !== null && raw !== '' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : undefined;
+}
+
 function query(search) {
   const s = search.toString();
   return s ? `?${s}` : '';

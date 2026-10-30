@@ -21,6 +21,10 @@ body[data-ui="off"] { --panel-w: 0px; }
   height: 100%;
 }
 
+/* Without WebGL 2 (webgl.js), a dark backdrop with a little light in it. */
+body[data-fallback] #hero { visibility: hidden; }
+body[data-fallback] .view { background: radial-gradient(ellipse 70% 55% at 50% 55%, #1c2636, #050608 70%); }
+
 .sidebar {
   position: fixed;
   top: 0;

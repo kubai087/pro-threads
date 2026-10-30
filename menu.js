@@ -131,7 +131,9 @@ export function menu(binding, { groups, detail } = {}) {
     style.textContent = CSS;
     document.head.append(style);
   }
-  const select = binding.element.querySelector('select');
+  const select = binding.element?.querySelector('select');
+  // Without the panel (embedded, or its library unavailable) there is no select.
+  if (!select) return;
   const isOpen = () => current?.select === select;
   select.addEventListener('mousedown', (event) => {
     event.preventDefault();

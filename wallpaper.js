@@ -26,20 +26,20 @@
  * ?stretch=1 lets the letters fill it.
  * Keys: H toggles the panel, R overlays the original, Space pauses.
  */
-import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
-import * as Essentials from 'https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.2.1/dist/tweakpane-plugin-essentials.min.js';
 import { CELL, MAX_LETTERS, MAX_CELLS, TEXELS, ALPHABET, pack } from './letters.js';
 import { VERT, FRAG } from './shader.js';
 import { PALETTES } from './palettes.js';
 import { menu } from './menu.js';
 import { addLanguage, language } from './i18n.js';
-import { params, embedded, save, pageUrl, format, slug } from './persist.js';
+import { params, embedded, calm, announce, number, save, pageUrl, format, slug } from './persist.js';
+import { getGL, fail } from './webgl.js';
+import { createPane } from './panel.js';
 import { createPacer } from './pace.js';
 import { addEmbed } from './share.js';
 
 const canvas = document.getElementById('wall');
 const stage = document.querySelector('.stage');
-const still = params.has('t') ? Number(params.get('t')) : null;
+const still = number(params.get('t')) ?? null;
 
 // ---------- Settings ----------
 
@@ -148,15 +148,27 @@ const state = { ...DEFAULTS };
 const pick = (table, name) => Object.keys(table).find((k) => slug(k) === name?.toLowerCase());
 const chosen = { palette: pick(PALETTES, params.get('palette')) ?? 'XDR Blue', effect: pick(EFFECTS, params.get('effect')) ?? 'Original' };
 Object.assign(state, PALETTES[chosen.palette], EFFECTS[chosen.effect]);
+// What a value from the URL is held to: the panel's own ranges (so a typo
+// can't stop the drawing, or a huge size exhaust the GPU).
+const LIMITS = {
+  width: [160, 7680], height: [160, 7680], scale: [1, 4], stretch: [0, 1],
+  speed: [0, 4], breathe: [0, 2.5], swell: [0, 3], fibrePace: [0, 4],
+  gain: [0.6, 2.4], density: [0.4, 2.5], texture: [0, 2], rim: [0, 2.5], reach: [0.4, 2.5],
+  floorDim: [0, 0.6], floorLit: [0.1, 0.9], warm: [0, 1], sparkle: [0, 1.5],
+  corner: [8, 70], arch: [8, 90], tip: [16, 140], spacing: [15, 240], rowGap: [0.02, 0.6],
+  quality: [0.4, 1], fps: [10, 240],
+};
 for (const [key, fallback] of Object.entries(DEFAULTS)) {
   if (!params.has(key)) continue;
   const raw = params.get(key);
-  if (typeof fallback === 'number') state[key] = Number(raw);
+  if (typeof fallback === 'number') state[key] = number(raw, LIMITS[key]) ?? state[key];
   else if (typeof fallback === 'boolean') state[key] = raw !== '0' && raw !== 'false';
-  else if (fallback.startsWith('#')) state[key] = raw.startsWith('#') ? raw : `#${raw}`;
-  else state[key] = raw;
+  else if (fallback.startsWith('#')) {
+    if (/^#?[0-9a-f]{6}$/i.test(raw)) state[key] = raw.startsWith('#') ? raw : `#${raw}`;
+  } else state[key] = raw;
 }
 if (params.get('view') === 'az') state.view = 'alphabet';
+if (calm) state.paused = true;
 if (params.get('ui') === '0') document.body.dataset.ui = 'off';
 // The original, for comparison, if a copy sits beside the page as
 // reference.webp (it is not part of this project). Loaded only when asked for.
@@ -174,13 +186,13 @@ const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 25
 
 // ---------- WebGL ----------
 
-const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: still !== null });
+const gl = getGL(canvas, { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: still !== null });
 
 function compile(type, source) {
   const s = gl.createShader(type);
   gl.shaderSource(s, source);
   gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(`a shader did not compile: ${gl.getShaderInfoLog(s)}`);
   return s;
 }
 
@@ -188,7 +200,7 @@ const program = gl.createProgram();
 gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT));
 gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG));
 gl.linkProgram(program);
-if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+if (!gl.getProgramParameter(program, gl.LINK_STATUS)) fail(`the shaders did not link: ${gl.getProgramInfoLog(program)}`);
 gl.useProgram(program);
 
 const quad = gl.createBuffer();
@@ -315,6 +327,7 @@ let fibreClock = still ?? 0;
 let dirty = true;
 
 function draw() {
+  if (gl.isContextLost()) return;
   gl.uniform1f(u.uTime, lightClock);
   gl.uniform1f(u.uFibreTime, fibreClock);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -391,8 +404,7 @@ function savePng() {
 
 // ---------- Panel ----------
 
-const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
-pane.registerPlugin(Essentials);
+const pane = await createPane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
 
 // PRO and A–Z switch what this page shows; Shapes goes to the hero
 // scenes (hero/), taking the palette along.
@@ -590,6 +602,7 @@ resize();
 // The first frame is drawn straight away, whether or not the page is shown
 // yet; after that the pacer decides.
 draw();
+announce();
 if (still === null) requestAnimationFrame(frame);
 
 window.__wall = { state, draw, pane };

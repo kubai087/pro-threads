@@ -16,6 +16,10 @@ body[data-ui="off"] { --panel-w: 0px; }
 /* Embedded, the backdrop fills the box round the stage too. */
 body[data-embed] .view { background: var(--backdrop); }
 
+/* Without WebGL 2 (webgl.js), a still of the wallpaper in its place. */
+body[data-fallback] #wall { visibility: hidden; }
+body[data-fallback] .stage { background: #000 url("media/pro.jpg") center / cover no-repeat; }
+
 /* The space left of the panel; the stage is fitted into it. */
 .view {
   position: fixed;

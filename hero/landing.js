@@ -61,6 +61,20 @@ function paths(values, hi) {
   return { line, area: values.length ? `${line}L300 120L${offset.toFixed(1)} 120Z` : '' };
 }
 
+// The landing page's fonts, fetched the first time it is shown, without
+// holding up the page: where Google Fonts can't be reached the text simply
+// stays in the fallback fonts, and a scene embedded without the landing
+// page never asks for them.
+const FONTS = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Raleway:wght@500;600&family=Space+Grotesk:wght@400;500&display=swap';
+function loadFonts() {
+  if (document.querySelector('link[data-landing-fonts]')) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = FONTS;
+  link.dataset.landingFonts = '';
+  document.head.append(link);
+}
+
 export function createLanding(view) {
   const root = document.createElement('div');
   root.className = 'landing';
@@ -118,6 +132,7 @@ export function createLanding(view) {
   // What follows the panel: shown or not, and the layout.
   function update(state) {
     root.hidden = !state.landing;
+    if (state.landing) loadFonts();
     root.dataset.layout = state.layout === 'Auto' ? LAYOUTS[state.scene] ?? 'center' : state.layout.toLowerCase();
   }
   return { update };
