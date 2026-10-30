@@ -20,5 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Embedding.** An Embed dialog with ready-to-paste code (web component, iframe or link) carrying the current settings; the `<pro-threads>` web component (`embed.js`), installable from this repository with npm; and an `embed=1` mode for iframes.
 - **Frame pacing.** A frame-rate cap (30, 60 or 120, default 60), no drawing while offscreen, hidden or paused, and automatic resolution that steps down when frames run slow.
 - **Stills.** `?t=` holds a single moment for screenshots, and `?ui=0` hides the panel.
+- **Robust embedding.** Embedded scenes fetch no panel library or fonts, fade in once drawn, hold still for reduced motion, show a still without WebGL 2, reload after a lost GPU context, clamp or ignore bad settings, and unload when far out of view with many on a page; `embed.js` is safe to import during server rendering.
+- **Chinese README** (`README.zh-CN.md`).
 
 [Unreleased]: https://github.com/kubai087/pro-threads/commits/main

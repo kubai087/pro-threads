@@ -1,5 +1,7 @@
 # PRO Threads
 
+**English** · [简体中文](README.zh-CN.md)
+
 **Letters woven from thousands of threads of light, drawn live in WebGL.** An animated wallpaper inspired by the MacBook Pro PROLED XDR wallpaper, rebuilt from scratch as a real-time shader, with a full A–Z thread typeface, palettes, a settings panel, hero scenes for landing pages and a drop-in `<pro-threads>` web component.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -99,7 +101,7 @@ Works in plain HTML and in any framework:
 <pro-threads scene="mobius" palette="ember" style="height: 100vh"></pro-threads>
 ```
 
-The scene fills the element's box (at least 200 px tall). It runs in an iframe, so it cannot clash with your page's styles or scripts; it loads lazily, is hidden from screen readers and the tab order as decoration, and stops drawing while scrolled out of view.
+The scene fills the element's box (at least 200 px tall). It runs in an iframe, so it cannot clash with your page's styles or scripts. It loads lazily, fades in once its first frame is drawn (no white flash), is hidden from screen readers and the tab order as decoration, stops drawing while scrolled out of view, and holds still for visitors who ask for reduced motion.
 
 | Attribute | Values |
 | --- | --- |
@@ -135,7 +137,7 @@ import 'pro-threads'; // defines <pro-threads>
 
 The package's code is just `embed.js`; the scene itself is still loaded from the hosted site, or from your own copy via `src`.
 
-- **React 19 / Next.js:** use `<pro-threads scene="ring" />` like any element. In Next.js, import the package in a client component (`'use client'`). With TypeScript, declare the element once:
+- **React 19 / Next.js:** use `<pro-threads scene="ring" />` like any element. Importing the package during server rendering does nothing, so it is safe anywhere; the element is defined in the browser (in Next.js, import it from a client component, `'use client'`). With TypeScript, declare the element once:
 
   ```ts
   declare module 'react' {
@@ -146,6 +148,17 @@ The package's code is just `embed.js`; the scene itself is still loaded from the
   ```
 
 - **Vue:** tell the compiler it is a custom element: `compilerOptions.isCustomElement = (tag) => tag === 'pro-threads'`.
+
+### Reliability
+
+An embedded scene is built to fail quietly rather than break your page:
+
+- **No dependencies at run time.** An embedded scene loads no panel library and no web fonts, only its own files.
+- **Without WebGL 2**, or if a shader can't be built on the visitor's GPU, it shows a still (the wallpaper) or a dark backdrop (the hero scenes) instead of an empty box.
+- **If the GPU context is lost** (a driver reset, say), the scene reloads itself once the browser gives it back.
+- **Bad values can't break it.** Settings outside the panel's ranges are clamped, and ones that aren't valid (an unknown scene, a malformed colour, `fps=abc`) fall back to the defaults.
+- **Many scenes on one page.** Browsers keep only so many WebGL contexts alive at once. With more than four `<pro-threads>` on a page, a scene that stays well out of view for ten seconds is unloaded, and loads again as it comes back.
+- **Content Security Policy.** If your site sets one, allow the element's script (`script-src https://cdn.jsdelivr.net`) and the scene's frame (`frame-src https://www.kubai.design`, or your own copy's origin).
 
 ### iframe
 
@@ -180,7 +193,7 @@ The element only builds the iframe's address; what the scene looks like comes fr
 
 What you change in the panel is written into the URL (only what differs from the defaults), so a reload, a bookmark or a shared link opens the same look. Going between the wallpaper and the hero scenes (the panel's **PRO / A–Z / Shapes** tabs) comes back to where you left each, and carries the palette across. A **hard reload** (bypassing the cache) starts from the defaults again. The panel's **Reset** button returns its values to the defaults, keeping the current view or scene.
 
-Every setting can also be given directly in the URL. Colours are hex without the `#`, switches are `1` or `0`.
+Every setting can also be given directly in the URL. Colours are hex without the `#`, switches are `1` or `0`. Numbers outside the panel's range are clamped to it, and values that aren't valid are ignored.
 
 ### Both pages
 
@@ -257,7 +270,7 @@ python3 -m http.server 8765
 
 Then open <http://localhost:8765> for the wallpaper and <http://localhost:8765/hero/> for the hero scenes. Any static server works (`npx serve`, `php -S`, and so on).
 
-Tweakpane and its Essentials plugin are loaded from jsDelivr, and the hero page's fonts from Google Fonts, so the first load needs a network connection.
+The panel's library (Tweakpane and its Essentials plugin) loads from jsDelivr, and the demo landing page's fonts from Google Fonts. Neither holds up the scene: if they can't be reached, the scene runs without the panel, or with fallback fonts.
 
 ### Reference image
 
@@ -303,6 +316,8 @@ Every scene then gets a **glow**: what is bright is blurred at a quarter and an 
 | `i18n.js` | English and Simplified Chinese for the panel |
 | `share.js` | The Embed dialog and its snippets |
 | `embed.js` | The `<pro-threads>` web component (the npm package's entry point) |
+| `panel.js` | Loads the panel's library only when the panel is used, with a stand-in when it can't be |
+| `webgl.js` | Gets a WebGL 2 context safely: a still when there is none, a reload after a lost context |
 | `hero/index.html`, `hero/style.css` | The hero scenes page, its layout and the demo landing page's styles |
 | `hero/hero.js` | The hero scenes: cameras, render targets, the glow pass and the panel |
 | `hero/shaders.js` | The ribbon, black hole, backdrop, glow and composite shaders |
@@ -313,7 +328,7 @@ Every scene then gets a **glow**: what is bright is blurred at a quarter and an 
 
 ## Browser support
 
-PRO Threads needs **WebGL 2**. It is written for current versions of Chrome, Edge, Safari and Firefox, and also relies on ES modules, CSS container queries, `ResizeObserver` and `IntersectionObserver`, all available in those browsers. Without WebGL 2 the canvas stays blank.
+PRO Threads needs **WebGL 2**. It is written for current versions of Chrome, Edge, Safari and Firefox, and also relies on ES modules, CSS container queries, `ResizeObserver` and `IntersectionObserver`, all available in those browsers. Without WebGL 2 the wallpaper shows a still image and the hero scenes a dark backdrop.
 
 ## Performance
 
