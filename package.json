@@ -23,5 +23,6 @@
     "type": "git",
     "url": "git+https://github.com/kubai087/pro-threads.git"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Kubai087"
 }
