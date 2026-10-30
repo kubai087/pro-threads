@@ -189,7 +189,9 @@ export const RIBBON_FRAG = `#version 300 es
     // Where a wall rolls onto the floor the light gathers on the fold and
     // spreads on across the floor toward the viewer.
     float past = along - uPool.x;
-    light += uPool.y * (exp(-pow(past / 0.35, 2.0)) + 0.6 * step(0.0, past) * exp(-past / uPool.z)) * (0.85 + 0.3 * bands);
+    // The spread past the fold eases in, so the light has no edge there.
+    float spread = smoothstep(-0.4, 0.4, past) * exp(-max(past, 0.0) / uPool.z);
+    light += uPool.y * (exp(-pow(past / 0.35, 2.0)) + 0.6 * spread) * (0.85 + 0.3 * bands);
     float v = (s * light + sheen * uSheen * (0.5 + s) + rim * 0.8) * uGain;
     vec3 col = fibre(ramp(v), t, dt, uLoop > 0.0 ? along * floor(uLoop * 0.08 + 0.5) / (uLoop * 0.08) : along);
 
