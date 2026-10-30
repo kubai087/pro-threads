@@ -1,10 +1,10 @@
 # PRO Threads
 
-An animated, real-time WebGL wallpaper: letters made of thousands of fine threads of light that bend, flare and glow — inspired by the look of the MacBook Pro wallpaper, rebuilt from scratch as a live shader, with a full A–Z thread typeface, palettes and a settings panel.
+An animated, real-time WebGL wallpaper: letters made of thousands of fine threads of light that bend, flare and glow — inspired by the MacBook Pro PROLED XDR wallpaper, rebuilt from scratch as a live shader, with a full A–Z thread typeface, palettes and a settings panel.
 
-一个实时渲染的 WebGL 动态壁纸：字母由成千上万根细光线组成，线条整体弯折、甩尖、发光。灵感来自 MacBook Pro 壁纸的视觉风格，用着色器从零重写，并扩展成完整的 A–Z 字体，带配色预设和参数面板。
+一个实时渲染的 WebGL 动态壁纸：字母由成千上万根细光线组成，线条整体弯折、甩尖、发光。灵感来自 MacBook Pro PROLED XDR 壁纸的视觉风格，用着色器从零重写，并扩展成完整的 A–Z 字体，带配色预设和参数面板。
 
-**Live demo / 在线体验：** <https://kubai087.github.io/pro-threads/> · [A–Z](https://kubai087.github.io/pro-threads/?view=az) · [Chroma](https://kubai087.github.io/pro-threads/?palette=chroma) · [Ember](https://kubai087.github.io/pro-threads/?palette=ember&effect=glow)
+**Live demo / 在线体验：** <https://www.kubai.design/pro-threads/> · [A–Z](https://www.kubai.design/pro-threads/?view=az) · [Chroma](https://www.kubai.design/pro-threads/?palette=chroma) · [Ember](https://www.kubai.design/pro-threads/?palette=ember&effect=glow)
 
 ![PRO in the default palette](media/pro.jpg)
 
@@ -64,4 +64,4 @@ To compare against the original wallpaper, put your own copy next to `index.html
 
 Tweakpane is MIT-licensed and loaded from a CDN.
 
-*Not affiliated with, endorsed by or sponsored by Apple Inc. MacBook Pro is a trademark of Apple Inc. No Apple artwork is included in this repository.*
+*Not affiliated with, endorsed by or sponsored by Apple Inc. MacBook Pro and PROLED XDR are trademarks of Apple Inc. No Apple artwork is included in this repository.*

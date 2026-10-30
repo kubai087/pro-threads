@@ -13,6 +13,7 @@ const S = SLIT / CELL;              // the same, as a fraction of the cell
 const SWEEP_R = 32 * PX;            // a sweep's corner on its outer side
 const DOME = 80 * PX;               // a dome's big outer corner
 const FOOT = 56 * PX;               // a foot's wide corner by the slit
+const FOOT_TIP = 44 * PX;           // how far a foot's outer side flares out
 const WEDGE = 110 * PX;             // how deep a wedge cuts in from the outer side
 
 export const MAX_LETTERS = 10;      // in a typed word
@@ -33,7 +34,9 @@ export const ALPHABET = ['ABCDEFGHI', 'JKLMNOPQR', 'STUVWXYZ'];
 //   sweep  the sheet leans toward its slit, flaring into a tip there
 //   wedge  a sweep whose outer side also cuts deep in toward the tip, so
 //          two of them meeting make a < (K's arms)
-//   foot   a wide round corner by the slit, a small one outside (R's leg)
+//   foot   the sheet leans away from its slit: a wide round corner by the
+//          slit, and the outer side flaring out into a thin tip that
+//          runs on under the next letter (R's leg)
 //   round  both corners round off
 //   flat   no bend
 function bend(mode, innerL, innerR, shape) {
@@ -47,7 +50,8 @@ function bend(mode, innerL, innerR, shape) {
   if (mode === 'sweep' && innerR && !innerL) return { d: [SWEEP_R, TIP], h: 46 * PX };
   if (mode === 'wedge' && innerL && !innerR) return { d: [-TIP, -WEDGE], h: 220 * PX };
   if (mode === 'wedge' && innerR && !innerL) return { d: [WEDGE, TIP], h: 220 * PX };
-  if (mode === 'foot') return { d: [innerL ? FOOT : R, innerR ? -FOOT : -SWEEP_R], h: 42 * PX };
+  if (mode === 'foot' && innerL && !innerR) return { d: [FOOT, FOOT_TIP], h: 42 * PX };
+  if (mode === 'foot' && innerR && !innerL) return { d: [-FOOT_TIP, -FOOT], h: 42 * PX };
   if (mode === 'flat') return { d: [0, 0], h: 1 };
   return { d: [R, -R], h: 36 * PX };
 }

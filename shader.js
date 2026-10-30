@@ -270,25 +270,9 @@ export const FRAG = `#version 300 es
     return col;
   }
 
-  void main() {
-    // Into the letters' own frame, where a letter is one unit tall.
-    float x = (vUv.x * uAspect - uFrame.x) / uFrame.z;
-    float y = (vUv.y - uFrame.y) / uFrame.z;
-    outColor = vec4(uBg, 1.0);
-
-    // Which row, and which letter in it.
-    int row = int(floor(y / uRowPitch));
-    if (row < 0 || row >= uRowCount) return;
-    vec4 line = uRows[row];
-    y -= float(row) * uRowPitch;
-    x -= line.x;
-    float pitch = uCell + uGap;
-    int slot = int(floor((x + uGap * 0.5) / pitch));
-    if (slot < 0 || float(slot) >= line.z) return;
-    int letter = int(line.y) + slot;
-
-    vec3 col = vec3(0.0);
-    float covered = 0.0;
+  // Adds a letter's sheets at (x, y): the brighter of overlapping sheets
+  // shows, and covered keeps how much of the pixel they fill.
+  void addLetter(int letter, float x, float y, inout vec3 col, inout float covered) {
     for (int k = 0; k < 4; k++) {
       vec4 a = texelFetch(uSheetTex, ivec2(k * 3, letter), 0);
       if (a.x > 100.0) break;
@@ -313,6 +297,37 @@ export const FRAG = `#version 300 es
       float edge = min(psi - a.x, a.y - psi) / grad;
       col = max(col, shade(psi, (abs(dx) + abs(dy)) * uPx, abs(dy / dx), edge, a, int(c.z + 0.5), y, cap, letter) * cover);
       covered = max(covered, cover);
+    }
+  }
+
+  void main() {
+    // Into the letters' own frame, where a letter is one unit tall.
+    float x = (vUv.x * uAspect - uFrame.x) / uFrame.z;
+    float y = (vUv.y - uFrame.y) / uFrame.z;
+    outColor = vec4(uBg, 1.0);
+
+    // Which row, and which letter in it.
+    int row = int(floor(y / uRowPitch));
+    if (row < 0 || row >= uRowCount) return;
+    vec4 line = uRows[row];
+    y -= float(row) * uRowPitch;
+    x -= line.x;
+    float pitch = uCell + uGap;
+    int slot = int(floor((x + uGap * 0.5) / pitch));
+    if (slot < 0 || float(slot) >= line.z) return;
+    int letter = int(line.y) + slot;
+
+    // This letter, and its neighbour when the pixel is near a side, since
+    // a foot's tip runs on under the next letter.
+    vec3 col = vec3(0.0);
+    float covered = 0.0;
+    float left = x - float(slot) * pitch;
+    for (int n = -1; n <= 1; n++) {
+      int s = slot + n;
+      if (s < 0 || float(s) >= line.z) continue;
+      if (n == -1 && left > 0.06) continue;
+      if (n == 1 && left < uCell - 0.06) continue;
+      addLetter(int(line.y) + s, x, y, col, covered);
     }
     outColor = vec4(col + uBg * (1.0 - covered), 1.0);
   }`;
