@@ -326,7 +326,9 @@ function savePng() {
 
 const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
 
-const tabs = pane.addTab({ pages: [{ title: 'PRO' }, { title: 'A–Z' }] });
+// PRO and A–Z switch what this page shows; Shapes goes to the hero
+// scenes (hero/), taking the palette along.
+const tabs = pane.addTab({ pages: [{ title: 'PRO' }, { title: 'A–Z' }, { title: 'Shapes' }] });
 tabs.pages[0].addBinding(state, 'text', { label: 'Text' }).on('change', () => {
   state.text = [...state.text.toUpperCase()].slice(0, MAX_LETTERS).join('');
   pane.refresh();
@@ -335,6 +337,10 @@ tabs.pages[1].addBinding(state, 'spacing', { label: 'Spacing', min: 15, max: 240
 tabs.pages[1].addBinding(state, 'rowGap', { label: 'Row gap', min: 0.02, max: 0.6, step: 0.01 });
 tabs.pages[state.view === 'alphabet' ? 1 : 0].selected = true;
 tabs.on('select', (event) => {
+  if (event.index === 2) {
+    location.href = `hero/?palette=${chosen.palette.toLowerCase().replace(/ /g, '-')}`;
+    return;
+  }
   state.view = event.index === 1 ? 'alphabet' : 'word';
   relayout();
   dirty = true;

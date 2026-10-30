@@ -132,6 +132,7 @@ export const RIBBON_FRAG = `#version 300 es
   uniform float uLoop;        // a closed band's length (0 if open)
   uniform float uWrap;        // 1 if the band closes round on itself across (a tube)
   uniform vec3 uFall;         // light falling from where the threads start: how much, how far, the floor it settles to
+  uniform vec3 uPool;         // light pooling at a fold: where along the threads, how strong, how far it spreads past
   in vec2 vUv;
   in vec3 vNormal;
   in vec3 vTangent;
@@ -185,6 +186,10 @@ export const RIBBON_FRAG = `#version 300 es
     float reach = uFall.y * mix(0.7, 1.3, vn(t * 0.9 + 17.0));
     float fall = mix(1.0, uFall.z + (1.0 - uFall.z) * exp(-pow(along / reach, 1.3)), uFall.x);
     float light = (0.25 + 0.75 * diffuse) * facing * (0.7 + 0.6 * bands) * swell * fall;
+    // Where a wall rolls onto the floor the light gathers on the fold and
+    // spreads on across the floor toward the viewer.
+    float past = along - uPool.x;
+    light += uPool.y * (exp(-pow(past / 0.35, 2.0)) + 0.6 * step(0.0, past) * exp(-past / uPool.z)) * (0.85 + 0.3 * bands);
     float v = (s * light + sheen * uSheen * (0.5 + s) + rim * 0.8) * uGain;
     vec3 col = fibre(ramp(v), t, dt, uLoop > 0.0 ? along * floor(uLoop * 0.08 + 0.5) / (uLoop * 0.08) : along);
 
@@ -201,93 +206,116 @@ export const QUAD_VERT = `#version 300 es
   }`;
 
 // The backdrop behind a ribbon: the palette's background with a little
-// light pooled behind the shape, and, for the portal, the light coming
-// through its slit, or, for the tunnel, the glow at its far end.
+// light pooled behind the shape, and, for the tunnel, the glow at its far end.
 export const BACKDROP_FRAG = `#version 300 es
   precision highp float;
   uniform vec3 uBg;
   uniform vec3 uTint;
   uniform vec3 uHot;
   uniform float uAspect;
-  uniform vec3 uSource;       // where the light comes from on screen, and which kind (0 none, 1 slit, 2 point)
+  uniform vec3 uSource;       // where the glow sits on screen, and whether there is one
   in vec2 vUv;
   out vec4 outColor;
   void main() {
     vec2 p = (vUv - uSource.xy) * vec2(uAspect, 1.0);
     vec3 col = uBg + uTint * 0.06 * exp(-dot(p, p) * 5.0);
-    if (uSource.z > 0.5 && uSource.z < 1.5) {
-      float beam = exp(-pow(p.x / 0.012, 2.0)) + 0.35 * exp(-abs(p.x) / 0.06);
-      col += uHot * beam * smoothstep(0.75, -0.2, vUv.y) * 1.8;
-    }
-    if (uSource.z > 1.5) {
+    if (uSource.z > 0.5) {
       float r = length(p);
       col += uHot * (exp(-r * r / 0.00025) * 1.2 + exp(-r / 0.06) * 0.45);
     }
     outColor = vec4(col, 1.0);
   }`;
 
-// A black hole: a black shadow ringed by a thin, hot photon ring; round it
-// the bent image of the far side of its disk, threads circling the hole;
-// and the disk itself, flattened by the view, crossing in front. The disk
-// turns faster near the hole and is brighter on the side coming toward us.
+// A black hole, ray traced. Each pixel's ray is bent by the hole as it
+// goes (the usual pseudo-Newtonian bend for light, in units of the
+// hole's radius), and wherever it crosses the plane of the accretion disk
+// within the disk's radii it picks up the disk's colour there. So the far
+// side of the disk is seen bent up over the hole, its underside bent down
+// below it, and a thin photon ring where light circles the hole before
+// escaping. Rays that fall in stay black; rays that get away show faint
+// stars, warped near the hole.
 export const BLACKHOLE_FRAG = `#version 300 es
   precision highp float;
   ${COMMON}
   uniform float uAspect;
-  uniform float uPx;
   uniform vec3 uBg;
-  uniform float uRadius;      // the shadow's radius, in frame heights
   uniform float uThreads;
   uniform float uSpin;
-  uniform vec2 uCenter;
+  uniform vec3 uCamPos;
+  uniform vec3 uCamRight;
+  uniform vec3 uCamUp;
+  uniform vec3 uCamFwd;
+  uniform float uTanHalf;     // tan of half the vertical field of view
+  uniform float uPixel;       // one pixel's angle, in radians
   in vec2 vUv;
   out vec4 outColor;
 
-  // A band of circular threads between radii r0 and r1, at radius r and
-  // angle a; returns its colour and, in cover, how much of the pixel it fills.
-  vec3 rings(float r, float a, float r0, float r1, float count, float glow, out float cover) {
-    float x = (r - r0) / (r1 - r0);
-    float t = x * count;
-    float dt = max(fwidth(t), 1e-4);
+  const float RIN = 2.6;
+  const float ROUT = 9.0;
+
+  // The disk where a ray crosses it: circling threads, turning faster
+  // near the hole, brighter on the side coming toward the viewer.
+  vec4 disk(vec3 hit, vec3 dir, float travelled) {
+    float r = length(hit.xz);
+    float a = atan(hit.z, hit.x);
+    float x = (r - RIN) / (ROUT - RIN);
+    float t = x * uThreads;
+    // How many threads one pixel covers here, from how far the ray came and
+    // how slantingly it meets the disk.
+    float dt = uThreads / (ROUT - RIN) * travelled * uPixel / max(abs(dir.y), 0.08);
     float s = threads(t, dt);
-    // Inner rings turn faster, as orbits do.
-    float spin = uSpin * 0.35 * pow(max(r / r0, 1.0), -1.5);
-    float bands = vn2p(vec2(t * 0.5, a / 6.28318 * 28.0 + uTime * spin * 28.0 / 6.28318), 28.0);
-    float light = (0.3 + glow * exp(-x * 2.4)) * (0.7 + 0.6 * bands);
-    float rim = exp(-(x * (r1 - r0)) / max(fwidth(r) * 2.0, 1e-5));
-    float dr = max(fwidth(r), 1e-5);
-    cover = smoothstep(r0 - dr, r0 + dr, r) * smoothstep(r1 + dr, r1 - dr, r) * smoothstep(1.0, 0.7, x);
-    return fibre(ramp((s * light + rim * 0.9) * uGain), t, dt, a * 3.0);
+    float spin = uSpin * 0.45 * pow(r / RIN, -1.5);
+    float bands = vn2p(vec2(t * 0.5, a / 6.28318 * 28.0 - uTime * spin * 28.0 / 6.28318), 28.0);
+    vec3 orbit = normalize(vec3(-sin(a), 0.0, cos(a)));
+    float beta = 0.5 * pow(r / RIN, -0.5);
+    float beam = clamp(pow(1.0 / (1.0 - beta * dot(orbit, -dir)), 3.0), 0.2, 2.2);
+    float light = (0.2 + 0.62 * exp(-x * 2.6)) * (0.7 + 0.6 * bands) * beam;
+    float edge = smoothstep(0.0, 0.03, x) * smoothstep(1.0, 0.7, x);
+    vec3 col = fibre(ramp(s * light * uGain), t, dt, a * r);
+    return vec4(col, 0.92 * edge);
+  }
+
+  float stars(vec3 d) {
+    vec2 q = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0))) * 160.0;
+    vec2 cell = floor(q);
+    float h = hash2(cell);
+    vec2 at = fract(q) - vec2(hash2(cell + 7.1), hash2(cell + 3.7));
+    return step(0.985, h) * exp(-dot(at, at) * 40.0) * (0.3 + 0.7 * hash2(cell + 1.3));
   }
 
   void main() {
-    vec2 p = (vUv - uCenter) * vec2(uAspect, 1.0);
-    float R = uRadius;
-    float r = length(p);
-    vec3 col = uBg;
-
-    // The disk, seen from just above its plane.
-    float tilt = 0.2;
-    vec2 d = vec2(p.x, p.y / tilt);
-    float rd = length(d);
-    float ad = atan(d.y, d.x);
-    float diskCover;
-    vec3 disk = rings(rd, ad, R * 1.45, R * 3.7, uThreads, 0.95, diskCover);
-    disk *= 0.75 + 0.5 * cos(ad);
-    float front = smoothstep(-0.002, 0.002, p.y);
-
-    // Behind: the far half of the disk, then its bent image round the hole.
-    col = mix(col, disk, diskCover * (1.0 - front));
-    float haloCover;
-    vec3 halo = rings(r, atan(p.y, p.x), R * 1.06, R * 1.8, uThreads * 0.4, 0.45, haloCover);
-    halo *= mix(0.45, 0.9, smoothstep(0.4, -0.4, p.y / max(r, 1e-4)));
-    col = mix(col, halo, haloCover);
-
-    // The shadow, its photon ring, then the near half of the disk in front.
-    col = mix(col, vec3(0.0), smoothstep(R + uPx, R - uPx, r));
-    float ring = exp(-abs(r - R * 1.025) / max(uPx * 1.4, R * 0.008));
-    col += ramp(1.0) * ring * 1.1;
-    col = mix(col, disk, diskCover * front);
+    vec2 ndc = vec2((vUv.x * 2.0 - 1.0) * uAspect, 1.0 - vUv.y * 2.0);
+    vec3 v = normalize(uCamFwd + (uCamRight * ndc.x + uCamUp * ndc.y) * uTanHalf);
+    vec3 p = uCamPos;
+    vec3 h = cross(p, v);
+    float h2 = dot(h, h);
+    vec3 col = vec3(0.0);
+    float alpha = 0.0;
+    float travelled = 0.0;
+    bool escaped = false;
+    for (int i = 0; i < 260; i++) {
+      float r2 = dot(p, p);
+      float r = sqrt(r2);
+      if (r < 1.0) break;
+      if (r > 40.0 && dot(p, v) > 0.0) { escaped = true; break; }
+      float ds = clamp(0.07 * r, 0.02, 1.5);
+      vec3 next = p + v * ds;
+      // Crossing the disk's plane: take the disk's colour there.
+      if (p.y * next.y < 0.0) {
+        vec3 hit = mix(p, next, p.y / (p.y - next.y));
+        float hr = length(hit.xz);
+        if (hr > RIN && hr < ROUT) {
+          vec4 c = disk(hit, v, travelled + distance(p, hit));
+          col += (1.0 - alpha) * c.rgb * c.a;
+          alpha += (1.0 - alpha) * c.a;
+          if (alpha > 0.97) break;
+        }
+      }
+      v = normalize(v - 1.5 * h2 * p / pow(r2, 2.5) * ds);
+      p = next;
+      travelled += ds;
+    }
+    if (escaped) col += (1.0 - alpha) * (uBg + ramp(0.9) * stars(v) * 0.4);
     outColor = vec4(col, 1.0);
   }`;
 
@@ -329,13 +357,16 @@ export const BLUR_FRAG = `#version 300 es
     outColor = vec4(c, 1.0);
   }`;
 
-// ...and lay a near and a wide glow over the picture.
+// ...and lay a near and a wide glow over the picture, then grade it:
+// contrast as an S-curve about a low pivot (darks deepen, brights rise
+// toward white without clipping) and saturation away from each pixel's grey.
 export const COMPOSITE_FRAG = `#version 300 es
   precision highp float;
   uniform sampler2D uScene;
   uniform sampler2D uNear;
   uniform sampler2D uWide;
   uniform float uGlow;
+  uniform vec2 uGrade;        // contrast, saturation
   in vec2 vUv;
   out vec4 outColor;
   void main() {
@@ -344,5 +375,12 @@ export const COMPOSITE_FRAG = `#version 300 es
     // Leave the picture as it is up to 0.8, and roll off what the glow
     // pushes past that instead of clipping it.
     vec3 over = max(c - 0.8, 0.0);
-    outColor = vec4(min(c - over + over / (1.0 + over * 2.5), 1.0), 1.0);
+    c = min(c - over + over / (1.0 + over * 2.5), 1.0);
+    const float pivot = 0.3;
+    vec3 low = pivot * pow(max(c, 0.0) / pivot, vec3(uGrade.x));
+    vec3 high = 1.0 - (1.0 - pivot) * pow(max(1.0 - c, 0.0) / (1.0 - pivot), vec3(uGrade.x));
+    c = mix(low, high, step(pivot, c));
+    float grey = dot(c, vec3(0.299, 0.587, 0.114));
+    c = mix(vec3(grey), c, uGrade.y);
+    outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
   }`;

@@ -84,20 +84,8 @@ function band(points, { w, closed = false, axis = null, twist = 0 }) {
   return { ...mesh(rows, -1, 1), closed };
 }
 
-// Two meshes as one.
-function merge(a, b) {
-  const data = new Float32Array(a.data.length + b.data.length);
-  data.set(a.data);
-  data.set(b.data, a.data.length);
-  const offset = a.data.length / 11;
-  const index = new Uint32Array(a.index.length + b.index.length);
-  index.set(a.index);
-  index.set(b.index.map((i) => i + offset), a.index.length);
-  return { data, index, length: Math.max(a.length, b.length), closed: false };
-}
-
 // Comes straight down a wall at x0, turns over a rounded edge onto the
-// floor and runs out toward the viewer, fanning away from the middle.
+// floor and runs out toward the viewer, fanning to one side if asked.
 function wallToFloor(x0, side, { height, r, run, fan }) {
   const pts = [];
   for (let i = 0; i <= 260; i++) pts.push([x0, height - (height - r) * (i / 260), 0]);
@@ -127,17 +115,9 @@ export const SHAPES = {
     }
     return { ...mesh(rows, -1, 1), closed: true };
   },
-  // Two tall walls with a slit of light between them; at their feet the
-  // threads turn onto the floor and fan out toward the viewer.
-  Portal: () => {
-    const shape = { height: 3.4, r: 0.32, run: 3.2, fan: 0.12 };
-    const w = 1.15;
-    const gap = 0.045;
-    return merge(
-      band(wallToFloor(-(gap + w), -1, shape), { w, axis: [1, 0, 0] }),
-      band(wallToFloor(gap + w, 1, shape), { w, axis: [1, 0, 0] }),
-    );
-  },
+  // One wide wall of threads coming straight down, rolling over a rounded
+  // edge onto the floor and running on toward the viewer.
+  Perspective: () => band(wallToFloor(0, 0, { height: 6.5, r: 0.55, run: 6.5, fan: 0 }), { w: 4.4, axis: [1, 0, 0] }),
   // The inside of a long tube, its threads running away to a vanishing
   // point. v runs once round; the shader joins its two ends seamlessly.
   Tunnel: () => {

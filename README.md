@@ -24,15 +24,15 @@ An animated, real-time WebGL wallpaper: letters made of thousands of fine thread
 
 ## Hero scenes
 
-The same threads of light, as first screens for a landing page: a **ring**, a **black hole** (photon ring, bent halo and an accretion disk that turns faster near the hole), a **portal** (a slit of light between two walls whose threads fan out across the floor) and a **tunnel** to a glowing vanishing point. Each is drawn with a real glow pass, takes about 2 ms a frame, and follows the pointer with a little parallax.
+The same threads of light, as first screens for a landing page: a **ring**; a **black hole**, ray traced so its accretion disk is seen bent over and under the hole, with a photon ring; a wide-angle **perspective** of a wall of threads rolling onto the floor; and a **tunnel** to a glowing vanishing point. Each is drawn with a glow pass and a contrast and saturation grade, takes 1–4 ms a frame, and follows the pointer with a little parallax. The panel's **PRO / A–Z / Shapes** tabs switch between the wallpaper and the scenes, keeping the palette.
 
-同样的光线丝线，做成落地页首屏：**圆环**、**黑洞**（光子环、引力弯折的光晕、内快外慢的吸积盘）、**光缝**（两面墙之间的一道光，墙底的丝线在地面散开）和**隧道**（冲向发光消失点的一点透视），全部带辉光。
+同样的光线丝线，做成落地页首屏：**圆环**；光线追踪的**黑洞**（吸积盘被引力弯折到黑洞上下，带光子环）；广角**透视**（一面丝线墙翻落到地面、向镜头散开）；以及冲向发光消失点的**隧道**。全部带辉光和对比度、饱和度调色，面板上的 PRO / A–Z / Shapes 标签可以在壁纸和场景之间切换。
 
-[Open the hero scenes →](https://www.kubai.design/pro-threads/hero/) · [Black hole](https://www.kubai.design/pro-threads/hero/?scene=blackhole) · [Portal](https://www.kubai.design/pro-threads/hero/?scene=portal&palette=violet) · [Tunnel](https://www.kubai.design/pro-threads/hero/?scene=tunnel&palette=ocean)
+[Open the hero scenes →](https://www.kubai.design/pro-threads/hero/) · [Black hole](https://www.kubai.design/pro-threads/hero/?scene=blackhole) · [Perspective](https://www.kubai.design/pro-threads/hero/?scene=perspective&palette=chroma) · [Tunnel](https://www.kubai.design/pro-threads/hero/?scene=tunnel&palette=ocean)
 
-![Hero scenes: ring, black hole, portal, tunnel](media/hero.jpg)
+![Hero scenes: ring, black hole, perspective, tunnel](media/hero.jpg)
 
-URL options: `?scene=ring|blackhole|portal|tunnel`, `?palette=chroma`, `?ui=0`. Keys: `H` hides the panel, `Space` pauses.
+URL options: `?scene=ring|blackhole|perspective|tunnel`, `?palette=chroma`, `?ui=0`. Keys: `H` hides the panel, `Space` pauses.
 
 ## Run it
 

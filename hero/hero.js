@@ -1,11 +1,11 @@
 /*
  * Hero scenes for a landing page, made of the wallpaper's threads of light:
- * a ring, a black hole, a portal (a slit of light between two walls whose
- * threads fan out across the floor) and a tunnel running to a vanishing
- * point. Each is drawn, then given a glow: what is bright is blurred at two
+ * a ring, a black hole (ray traced, so its disk is seen bent round it), a
+ * wide-angle view of a wall of threads rolling onto the floor, and a
+ * tunnel running to a vanishing point. Each is drawn, then given a glow: what is bright is blurred at two
  * sizes and laid back over the picture.
  *
- * URL options: ?scene=ring|blackhole|portal|tunnel  ?palette=chroma
+ * URL options: ?scene=ring|blackhole|perspective|tunnel  ?palette=chroma
  *              ?ui=0 (no panel)  ?t=4 (hold one moment, for stills)
  * Keys: H toggles the panel, Space pauses.
  */
@@ -24,17 +24,20 @@ if (params.get('ui') === '0') document.body.dataset.ui = 'off';
 // ---------- Scenes ----------
 
 // How each ribbon scene is framed: where the camera sits and looks, its
-// field of view, what the shape turns about (or how far it only sways),
-// where the light comes from, and the light behind it: none, a slit (with
-// the point in the scene it shines from) or a point.
+// field of view, what the shape turns about (or that it holds still),
+// where the light comes from, and the glow behind it, from a point in
+// the scene.
 const SCENES = {
   Ring: { eye: [0, 0.82, 2.5], target: [0, -0.08, 0], fov: 40, spin: [0.12, 1, 0], light: [-0.5, 0.9, 0.5], sheen: 0.22 },
   'Black Hole': { blackHole: true },
-  // Flat walls facing the camera would catch the sheen all over, so the
-  // portal is lit like the wallpaper instead: light falling from the top.
-  Portal: {
-    eye: [0, 0.7, 4.7], target: [0, 1.2, 0], fov: 42, spin: [0, 1, 0], sway: 0.08, light: [-0.35, 0.6, 0.9],
-    slit: [0, 1.6, -0.4], sheen: 0.12, fall: [1, 1.3, 0.22],
+  // A wide-angle view, level and close in, of a broad wall of threads
+  // rolling onto the floor: the wall stands straight, the fold runs level
+  // across, and the floor's threads spread out toward the bottom corners.
+  // A flat wall facing the camera would catch the sheen all over, so it is
+  // lit like the wallpaper instead, with light falling from the top.
+  Perspective: {
+    eye: [0, 1.25, 3.1], target: [0, 1.25, 0], fov: 100, spin: [0, 1, 0], fixed: true, light: [-0.35, 0.6, 0.9],
+    sheen: 0.18, fall: [1, 3.2, 0.2], pool: [6.38, 0.5, 2.6], fog: [7, 16], grade: [1.2, 1.4],
   },
   Tunnel: { eye: [0, 0, 0], target: [0, 0, -10], fov: 62, spin: [0, 0, 1], light: [0.6, 0.8, 0.25], point: [0, 0, -14], fog: [1.5, 14], sheen: 0.3, gain: 0.8 },
 };
@@ -53,12 +56,14 @@ const DEFAULTS = {
   sparkle: 1,
   glow: 0.7,
   threshold: 0.62,
+  contrast: 1,
+  saturation: 1,
   parallax: true,
   quality: (devicePixelRatio || 1) >= 2 ? 0.75 : 1,
   paused: false,
 };
 const state = { ...DEFAULTS };
-for (const key of ['speed', 'spin', 'zoom', 'threads', 'sheen', 'gain', 'warm', 'sparkle', 'glow', 'threshold', 'quality']) {
+for (const key of ['speed', 'spin', 'zoom', 'threads', 'sheen', 'gain', 'warm', 'sparkle', 'glow', 'threshold', 'contrast', 'saturation', 'quality']) {
   if (params.has(key)) state[key] = Number(params.get(key));
 }
 
@@ -251,14 +256,26 @@ function drawScene() {
     gl.useProgram(holeProg.p);
     const u = holeProg.u;
     palette(u);
+    // Just above the disk's plane, a little off to one side, nudged by
+    // the pointer; the zoom moves the camera in or out.
+    const d = 20 * state.zoom;
+    const tilt = (7 + (state.parallax ? pointer.y * 2 : 0)) * (Math.PI / 180);
+    const turn = (state.parallax ? pointer.x * 4 : 0) * (Math.PI / 180);
+    const cam = [d * Math.cos(tilt) * Math.sin(turn), d * Math.sin(tilt), d * Math.cos(tilt) * Math.cos(turn)];
+    const fwd = norm(sub([0, 0, 0], cam));
+    const right = norm(cross(fwd, [0, 1, 0]));
+    const up = cross(right, fwd);
+    const tanHalf = Math.tan((34 / 2) * (Math.PI / 180));
     gl.uniform1f(u.uAspect, aspect);
-    gl.uniform1f(u.uPx, 1 / h);
     gl.uniform3fv(u.uBg, rgb(p.background));
-    gl.uniform1f(u.uRadius, 0.21 / state.zoom);
     gl.uniform1f(u.uThreads, 240 * state.threads);
     gl.uniform1f(u.uSpin, state.spin);
-    const nudge = state.parallax ? [pointer.x * 0.015, pointer.y * 0.012] : [0, 0];
-    gl.uniform2f(u.uCenter, 0.5 + nudge[0], 0.5 + nudge[1]);
+    gl.uniform3fv(u.uCamPos, cam);
+    gl.uniform3fv(u.uCamRight, right);
+    gl.uniform3fv(u.uCamUp, up);
+    gl.uniform3fv(u.uCamFwd, fwd);
+    gl.uniform1f(u.uTanHalf, tanHalf);
+    gl.uniform1f(u.uPixel, (2 * tanHalf) / h);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return;
   }
@@ -272,10 +289,9 @@ function drawScene() {
   const proj = perspective(scene.fov, aspect, 0.05, 40);
 
   // The backdrop, with the light behind the shape where it lands on screen.
-  const from = scene.slit ?? scene.point;
-  const src = [0.5, 0.5, scene.slit ? 1 : scene.point ? 2 : 0];
-  if (from) {
-    const c = apply(proj, apply(view, [...from, 1]));
+  const src = [0.5, 0.5, scene.point ? 1 : 0];
+  if (scene.point) {
+    const c = apply(proj, apply(view, [...scene.point, 1]));
     src[0] = 0.5 + 0.5 * (c[0] / c[3]);
     src[1] = 0.5 - 0.5 * (c[1] / c[3]);
   }
@@ -293,7 +309,7 @@ function drawScene() {
   const u = ribbonProg.u;
   palette(u);
   const mesh = ribbonMesh(state.scene);
-  const angle = scene.sway ? Math.sin(clock * 0.3 * state.spin) * scene.sway : clock * 0.12 * state.spin;
+  const angle = scene.fixed ? 0 : scene.sway ? Math.sin(clock * 0.3 * state.spin) * scene.sway : clock * 0.12 * state.spin;
   gl.uniformMatrix4fv(u.uProj, false, proj);
   gl.uniformMatrix4fv(u.uView, false, view);
   gl.uniformMatrix4fv(u.uModel, false, rotation(scene.spin, angle));
@@ -304,6 +320,7 @@ function drawScene() {
   gl.uniform1f(u.uThreads, (mesh.wrap ? 420 : 260) * state.threads);
   gl.uniform1f(u.uSheen, state.sheen * (scene.sheen ?? 1));
   gl.uniform3fv(u.uFall, scene.fall ?? [0, 1, 1]);
+  gl.uniform3fv(u.uPool, scene.pool ?? [0, 0, 1]);
   gl.uniform1f(u.uLoop, mesh.closed ? mesh.length : 0);
   gl.uniform1f(u.uWrap, mesh.wrap ? 1 : 0);
   gl.bindVertexArray(mesh.vao);
@@ -332,7 +349,13 @@ function draw() {
   });
   pass(blurProg, w2, { uSrc: w1 }, (u) => gl.uniform2f(u.uStep, 2 / w1.w, 0));
   pass(blurProg, w1, { uSrc: w2 }, (u) => gl.uniform2f(u.uStep, 0, 2 / w1.h));
-  pass(compositeProg, null, { uScene: scene, uNear: n1, uWide: w1 }, (u) => gl.uniform1f(u.uGlow, state.glow));
+  // Each scene has its own grade, which the panel's contrast and
+  // saturation then scale.
+  const grade = SCENES[state.scene].grade ?? [1, 1];
+  pass(compositeProg, null, { uScene: scene, uNear: n1, uWide: w1 }, (u) => {
+    gl.uniform1f(u.uGlow, state.glow);
+    gl.uniform2f(u.uGrade, grade[0] * state.contrast, grade[1] * state.saturation);
+  });
   window.__heroDrawn = true;
 }
 
@@ -374,10 +397,19 @@ function savePng() {
 
 // ---------- Panel ----------
 
-const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'Thread Hero' });
+const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
 const opts = (keys) => Object.fromEntries(keys.map((k) => [k, k]));
-pane.addBinding(state, 'scene', { label: 'Scene', options: opts(Object.keys(SCENES)) });
-pane.addBinding(state, 'palette', { label: 'Palette', options: opts(Object.keys(PALETTES)) });
+// The same tabs as the wallpaper's: PRO and A–Z go back to it, taking the
+// palette along; Shapes is this page.
+const tabs = pane.addTab({ pages: [{ title: 'PRO' }, { title: 'A–Z' }, { title: 'Shapes' }] });
+tabs.pages[2].selected = true;
+tabs.on('select', (event) => {
+  if (event.index === 2) return;
+  const palette = state.palette.toLowerCase().replace(/ /g, '-');
+  location.href = `../?${event.index === 1 ? 'view=az&' : ''}palette=${palette}`;
+});
+tabs.pages[2].addBinding(state, 'scene', { label: 'Scene', options: opts(Object.keys(SCENES)) });
+tabs.pages[2].addBinding(state, 'palette', { label: 'Palette', options: opts(Object.keys(PALETTES)) });
 
 const motion = pane.addFolder({ title: 'Motion' });
 motion.addBinding(state, 'speed', { label: 'Light speed', min: 0, max: 3, step: 0.01 });
@@ -390,6 +422,8 @@ look.addBinding(state, 'zoom', { label: 'Distance', min: 0.5, max: 2, step: 0.01
 look.addBinding(state, 'threads', { label: 'Threads', min: 0.4, max: 2.5, step: 0.01 });
 look.addBinding(state, 'sheen', { label: 'Sheen', min: 0, max: 2, step: 0.01 });
 look.addBinding(state, 'gain', { label: 'Brightness', min: 0.6, max: 2.4, step: 0.01 });
+look.addBinding(state, 'contrast', { label: 'Contrast', min: 0.6, max: 1.8, step: 0.01 });
+look.addBinding(state, 'saturation', { label: 'Saturation', min: 0, max: 2, step: 0.01 });
 look.addBinding(state, 'warm', { label: 'Warmth', min: 0, max: 1, step: 0.01 });
 look.addBinding(state, 'sparkle', { label: 'Fibres', min: 0, max: 3, step: 0.01 });
 
