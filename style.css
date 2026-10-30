@@ -13,6 +13,9 @@ body {
 
 body[data-ui="off"] { --panel-w: 0px; }
 
+/* Embedded, the backdrop fills the box round the stage too. */
+body[data-embed] .view { background: var(--backdrop); }
+
 /* The space left of the panel; the stage is fitted into it. */
 .view {
   position: fixed;
@@ -63,6 +66,8 @@ body[data-reference] .reference { opacity: 1; z-index: 1; }
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   background: #111215;
   scrollbar-width: thin;
+  /* Keep room for the scrollbar, so folding the panel doesn't change its width. */
+  scrollbar-gutter: stable;
 }
 
 body[data-ui="off"] .sidebar { display: none; }

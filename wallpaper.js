@@ -22,41 +22,76 @@
  * ?palette=ember&effect=calm start from a preset.
  * Also: ?view=az (the alphabet)  ?ui=0 (hide the panel)  ?t=7 (hold one
  * moment, for stills)  ?ref=0.5 (the original on top, at that opacity).
+ * Sizes: ?width=402&height=874&scale=3 saves a 1206 x 2622 PNG, and
+ * ?stretch=1 lets the letters fill it.
  * Keys: H toggles the panel, R overlays the original, Space pauses.
  */
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+import * as Essentials from 'https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.2.1/dist/tweakpane-plugin-essentials.min.js';
 import { CELL, MAX_LETTERS, MAX_CELLS, TEXELS, ALPHABET, pack } from './letters.js';
 import { VERT, FRAG } from './shader.js';
 import { PALETTES } from './palettes.js';
+import { menu } from './menu.js';
+import { addLanguage, language } from './i18n.js';
+import { params, embedded, save, pageUrl, format, slug } from './persist.js';
+import { createPacer } from './pace.js';
+import { addEmbed } from './share.js';
 
-const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('wall');
 const stage = document.querySelector('.stage');
 const still = params.has('t') ? Number(params.get('t')) : null;
 
 // ---------- Settings ----------
 
-const SIZES = {
-  'Original 2000 × 1293': [2000, 1293],
-  '16:9 · 1920 × 1080': [1920, 1080],
-  '16:10 · 2560 × 1600': [2560, 1600],
-  '4:3 · 1600 × 1200': [1600, 1200],
-  '1:1 · 1440 × 1440': [1440, 1440],
-  '3:4 · 1200 × 1600': [1200, 1600],
-  '9:16 · 1080 × 1920': [1080, 1920],
+// Sizes: width and height (a phone's in points), and the scale a saved PNG
+// is drawn at, so a phone's comes out at its own pixels. Android phones are
+// given at half their pixels, at 2×.
+const SIZE_GROUPS = {
+  Desktop: {
+    Original: [2000, 1293, 1],
+    '16:9': [1920, 1080, 1],
+    '16:10': [2560, 1600, 1],
+    '4:3': [1600, 1200, 1],
+    '1:1': [1440, 1440, 1],
+    '3:4': [1200, 1600, 1],
+    '9:16': [1080, 1920, 1],
+  },
+  iPhone: {
+    'iPhone 17 Pro Max': [440, 956, 3],
+    'iPhone 17 / 17 Pro': [402, 874, 3],
+    'iPhone Air': [420, 912, 3],
+    'iPhone 16 Plus': [430, 932, 3],
+    'iPhone 16': [393, 852, 3],
+    'iPhone 16e': [390, 844, 3],
+    'iPhone SE': [375, 667, 2],
+  },
+  Android: {
+    'Pixel 10 Pro XL': [672, 1496, 2],
+    'Pixel 10 Pro': [640, 1428, 2],
+    'Pixel 10': [540, 1212, 2],
+    'Galaxy S25 Ultra': [720, 1560, 2],
+    'Galaxy S25': [540, 1170, 2],
+  },
 };
+const SIZES = Object.assign({}, ...Object.values(SIZE_GROUPS));
+// The largest side a saved PNG can have.
+const MAX_SIDE = 16384;
 
 const DEFAULTS = {
   view: 'word',
   text: 'PRO',
-  // Size: the stage's proportions, and the pixels a saved PNG has.
+  // Size: the stage's proportions; a saved PNG has them times the scale.
+  // Stretch eases the letters from keeping their proportions (0) to
+  // filling the stage across and down (1).
   width: 2000,
   height: 1293,
+  scale: 1,
+  stretch: 0,
   // Motion
-  speed: 1,
-  breathe: 1,
-  swell: 1,
-  fibrePace: 1,
+  speed: 1.6,
+  breathe: 1.5,
+  swell: 2,
+  fibrePace: 1.4,
   paused: false,
   // Light, fitted to the original
   gain: 1.5,
@@ -92,14 +127,16 @@ const DEFAULTS = {
   // lower it when frames run slow.
   quality: (devicePixelRatio || 1) >= 2 ? 0.75 : 1,
   autoQuality: true,
+  // The most frames drawn a second.
+  fps: 60,
 };
 
 // Effects: how the light moves and falls, and how the threads look. The
-// first is the original's.
+// first has the original's light, set in clearly visible motion.
 const EFFECTS = {
-  Original: { speed: 1, breathe: 1, swell: 1, fibrePace: 1, gain: 1.5, reach: 1, floorDim: 0.2, floorLit: 0.52, density: 1, texture: 1, rim: 1, warm: 0.6, sparkle: 1 },
+  Original: { speed: 1.6, breathe: 1.5, swell: 2, fibrePace: 1.4, gain: 1.5, reach: 1, floorDim: 0.2, floorLit: 0.52, density: 1, texture: 1, rim: 1, warm: 0.6, sparkle: 1 },
   Calm: { speed: 0.4, breathe: 0.6, swell: 0.5, fibrePace: 0.5, gain: 1.45, reach: 1.1, floorDim: 0.2, floorLit: 0.52, density: 1, texture: 0.9, rim: 1, warm: 0.5, sparkle: 0.7 },
-  Lively: { speed: 2, breathe: 1.7, swell: 2, fibrePace: 2.2, gain: 1.55, reach: 1, floorDim: 0.22, floorLit: 0.52, density: 1, texture: 1.1, rim: 1.1, warm: 0.75, sparkle: 1.3 },
+  Lively: { speed: 2.6, breathe: 2.2, swell: 2.8, fibrePace: 3, gain: 1.55, reach: 1, floorDim: 0.22, floorLit: 0.52, density: 1, texture: 1.1, rim: 1.1, warm: 0.75, sparkle: 1.3 },
   Silk: { speed: 0.7, breathe: 1, swell: 1, fibrePace: 0.8, gain: 1.5, reach: 1.4, floorDim: 0.24, floorLit: 0.56, density: 0.7, texture: 0.4, rim: 0.6, warm: 0.5, sparkle: 0.6 },
   'Fine Wire': { speed: 1, breathe: 1, swell: 1, fibrePace: 1, gain: 1.45, reach: 0.9, floorDim: 0.16, floorLit: 0.46, density: 2, texture: 1.6, rim: 1.5, warm: 0.6, sparkle: 1 },
   Glow: { speed: 0.9, breathe: 1.2, swell: 1.4, fibrePace: 1, gain: 1.9, reach: 1.8, floorDim: 0.26, floorLit: 0.66, density: 1, texture: 0.9, rim: 1.6, warm: 1, sparkle: 1.2 },
@@ -108,7 +145,7 @@ const EFFECTS = {
 
 const state = { ...DEFAULTS };
 // ?palette= and ?effect= start from a preset; other values override it.
-const pick = (table, name) => Object.keys(table).find((k) => k.toLowerCase().replace(/ /g, '-') === name?.toLowerCase());
+const pick = (table, name) => Object.keys(table).find((k) => slug(k) === name?.toLowerCase());
 const chosen = { palette: pick(PALETTES, params.get('palette')) ?? 'XDR Blue', effect: pick(EFFECTS, params.get('effect')) ?? 'Original' };
 Object.assign(state, PALETTES[chosen.palette], EFFECTS[chosen.effect]);
 for (const [key, fallback] of Object.entries(DEFAULTS)) {
@@ -206,12 +243,23 @@ function relayout() {
 
 // Fits the letters to the stage: three fill the original's frame, anything
 // wider or taller is scaled down as a whole, and everything is centred.
-function placeLetters() {
+// Stretched, each axis eases on to filling the stage on its own. pixels:
+// the height of the whole image being drawn.
+function placeLetters(pixels = canvas.height) {
   const aspect = state.width / state.height;
-  const scale = Math.min(1, aspect / layout.width, 1 / layout.height);
+  const fit = Math.min(1, aspect / layout.width, 1 / layout.height);
+  const t = state.stretch;
+  const sx = fit ** (1 - t) * (aspect / layout.width) ** t;
+  const sy = fit ** (1 - t) * (1 / layout.height) ** t;
   gl.uniform1f(u.uAspect, aspect);
-  gl.uniform3f(u.uFrame, (aspect - layout.width * scale) / 2, (1 - layout.height * scale) / 2, scale);
-  gl.uniform1f(u.uPx, 1 / (canvas.height * scale));
+  gl.uniform4f(u.uFrame, (aspect - layout.width * sx) / 2, (1 - layout.height * sy) / 2, sx, sy);
+  gl.uniform2f(u.uPx, 1 / (pixels * sx), 1 / (pixels * sy));
+}
+
+// The pixels a saved PNG has: the size times the scale, within MAX_SIDE.
+function outputSize() {
+  const scale = Math.min(state.scale, MAX_SIDE / Math.max(state.width, state.height));
+  return [Math.round(state.width * scale), Math.round(state.height * scale)];
 }
 
 // Everything else the panel sets.
@@ -242,6 +290,12 @@ function setUniforms() {
 // Sizes the stage to the chosen proportions and the canvas to the pixels
 // it covers, times the quality setting.
 function resize() {
+  // Embedded, the wallpaper takes the shape of the box it is given.
+  if (embedded) {
+    const box = stage.parentElement.getBoundingClientRect();
+    state.width = Math.max(1, Math.round(box.width));
+    state.height = Math.max(1, Math.round(box.height));
+  }
   stage.style.setProperty('--ratio', state.width / state.height);
   const box = stage.getBoundingClientRect();
   const density = (devicePixelRatio || 1) * state.quality;
@@ -269,11 +323,12 @@ function draw() {
 }
 
 // Frames: the clocks advance with the speed settings (so changing a speed
-// never makes the light jump), and nothing is drawn while paused unless
+// never makes the light jump). A frame is drawn only when the pacer allows
+// (the frame-rate cap, on screen, page shown), and not while paused unless
 // something changed. If frames keep running slow, draw fewer pixels.
-const stats = { fps: 0, resolution: '' };
+const stats = { fps: 0, resolution: '', output: '' };
+const pacer = createPacer(canvas);
 let last = null;
-let slow = 0;
 let frames = 0;
 let since = 0;
 function frame(now) {
@@ -284,38 +339,50 @@ function frame(now) {
     lightClock += dt * state.speed;
     fibreClock += dt * state.speed * state.fibrePace;
   }
-  if (state.paused && !dirty) return;
+  if ((state.paused && !dirty) || !pacer.ready(now, state.fps)) return;
   draw();
+  const struggling = pacer.drew(now, state.fps);
 
   frames++;
-  since += dt;
-  if (since >= 0.5) {
-    stats.fps = Math.round(frames / since);
+  if (now - since >= 500) {
+    stats.fps = Math.round((frames * 1000) / (now - since));
     frames = 0;
-    since = 0;
+    since = now;
   }
-  if (state.autoQuality && !state.paused && dt > 0) {
-    slow = dt > 1 / 40 ? slow + 1 : Math.max(0, slow - 1);
-    if (slow > 45 && state.quality > 0.5) {
-      state.quality = Math.max(0.5, Math.round((state.quality - 0.1) * 100) / 100);
-      slow = 0;
-      resize();
-      pane.refresh();
-    }
+  if (struggling && state.autoQuality && !state.paused && state.quality > 0.5) {
+    state.quality = Math.max(0.5, Math.round((state.quality - 0.1) * 100) / 100);
+    resize();
+    pane.refresh();
   }
 }
 
-// Saves a PNG at the size chosen in the panel, then goes back to the screen's size.
+// Saves a PNG at the size chosen in the panel times its scale, then goes
+// back to the screen's size. It is drawn in tiles, each copied into one
+// 2D canvas, so it can be larger than WebGL draws at once.
 function savePng() {
-  canvas.width = state.width;
-  canvas.height = state.height;
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  placeLetters();
-  draw();
-  canvas.toBlob((blob) => {
+  const [width, height] = outputSize();
+  const tile = Math.min(4096, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), ...gl.getParameter(gl.MAX_VIEWPORT_DIMS));
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = height;
+  const ctx = out.getContext('2d');
+  placeLetters(height);
+  for (let y = 0; y < height; y += tile) {
+    for (let x = 0; x < width; x += tile) {
+      canvas.width = Math.min(tile, width - x);
+      canvas.height = Math.min(tile, height - y);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.uniform4f(u.uTile, x / width, y / height, canvas.width / width, canvas.height / height);
+      draw();
+      ctx.drawImage(canvas, x, y);
+    }
+  }
+  gl.uniform4f(u.uTile, 0, 0, 1, 1);
+  const name = preset.size === 'Custom' ? '' : `${preset.size.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-`;
+  out.toBlob((blob) => {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `pro-threads-${state.width}x${state.height}.png`;
+    link.download = `pro-threads-${name}${width}x${height}.png`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   });
@@ -325,6 +392,7 @@ function savePng() {
 // ---------- Panel ----------
 
 const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
+pane.registerPlugin(Essentials);
 
 // PRO and A–Z switch what this page shows; Shapes goes to the hero
 // scenes (hero/), taking the palette along.
@@ -338,42 +406,64 @@ tabs.pages[1].addBinding(state, 'rowGap', { label: 'Row gap', min: 0.02, max: 0.
 tabs.pages[state.view === 'alphabet' ? 1 : 0].selected = true;
 tabs.on('select', (event) => {
   if (event.index === 2) {
-    location.href = `hero/?palette=${chosen.palette.toLowerCase().replace(/ /g, '-')}`;
+    location.href = pageUrl('hero', 'hero/', {
+      palette: chosen.palette === 'XDR Blue' ? null : slug(chosen.palette),
+      lang: language.value === 'zh' ? 'zh' : null,
+    });
     return;
   }
   state.view = event.index === 1 ? 'alphabet' : 'word';
   relayout();
+  remember();
   dirty = true;
 });
 
 const presets = pane.addFolder({ title: 'Presets' });
-presets.addBinding(chosen, 'palette', {
+menu(presets.addBinding(chosen, 'palette', {
   label: 'Palette',
   options: Object.fromEntries(Object.keys(PALETTES).map((k) => [k, k])),
 }).on('change', (event) => {
   Object.assign(state, PALETTES[event.value]);
   pane.refresh();
-});
-presets.addBinding(chosen, 'effect', {
+}));
+menu(presets.addBinding(chosen, 'effect', {
   label: 'Effect',
   options: Object.fromEntries(Object.keys(EFFECTS).map((k) => [k, k])),
 }).on('change', (event) => {
   Object.assign(state, EFFECTS[event.value]);
   pane.refresh();
-});
+}));
 
 const size = pane.addFolder({ title: 'Size' });
-const preset = { size: Object.keys(SIZES).find((k) => SIZES[k][0] === state.width && SIZES[k][1] === state.height) ?? 'Custom' };
-size.addBinding(preset, 'size', {
+// The preset showing: one with this width and height (the one picked, if
+// it still fits), else Custom.
+const preset = { size: 'Custom' };
+const fits = (key) => SIZES[key]?.[0] === state.width && SIZES[key]?.[1] === state.height;
+const presetOf = () => (fits(preset.size) ? preset.size : Object.keys(SIZES).find(fits) ?? 'Custom');
+preset.size = presetOf();
+const presetBinding = size.addBinding(preset, 'size', {
   label: 'Preset',
   options: Object.fromEntries([...Object.keys(SIZES), 'Custom'].map((k) => [k, k])),
 }).on('change', (event) => {
   if (!SIZES[event.value]) return;
-  [state.width, state.height] = SIZES[event.value];
+  [state.width, state.height, state.scale] = SIZES[event.value];
   pane.refresh();
 });
-size.addBinding(state, 'width', { label: 'Width', min: 320, max: 7680, step: 1 });
-size.addBinding(state, 'height', { label: 'Height', min: 320, max: 7680, step: 1 });
+menu(presetBinding, {
+  groups: Object.entries(SIZE_GROUPS).map(([title, sizes]) => ({ title, keys: Object.keys(sizes) })),
+  detail: (key) => SIZES[key] && `${SIZES[key][0] * SIZES[key][2]} × ${SIZES[key][1] * SIZES[key][2]}`,
+});
+size.addBinding(state, 'width', { label: 'Width', min: 160, max: 7680, step: 1 });
+size.addBinding(state, 'height', { label: 'Height', min: 160, max: 7680, step: 1 });
+size.addBinding(state, 'scale', {
+  label: 'Scale',
+  view: 'radiogrid',
+  groupName: 'scale',
+  size: [4, 1],
+  cells: (x) => ({ title: `${x + 1}×`, value: x + 1 }),
+});
+size.addBinding(state, 'stretch', { label: 'Stretch', min: 0, max: 1, step: 0.01 });
+size.addBinding(stats, 'output', { label: 'PNG', readonly: true, interval: 200 });
 size.addButton({ title: 'Save PNG' }).on('click', savePng);
 
 const motion = pane.addFolder({ title: 'Motion' });
@@ -383,7 +473,7 @@ motion.addBinding(state, 'swell', { label: 'Swell', min: 0, max: 3, step: 0.01 }
 motion.addBinding(state, 'fibrePace', { label: 'Fibre pace', min: 0, max: 4, step: 0.01 });
 motion.addBinding(state, 'paused', { label: 'Paused' });
 
-const light = pane.addFolder({ title: 'Light' });
+const light = pane.addFolder({ title: 'Light', expanded: false });
 light.addBinding(state, 'gain', { label: 'Brightness', min: 0.6, max: 2.4, step: 0.01 });
 light.addBinding(state, 'reach', { label: 'Reach', min: 0.4, max: 2.5, step: 0.01 });
 light.addBinding(state, 'floorDim', { label: 'Dim side', min: 0, max: 0.6, step: 0.01 });
@@ -392,7 +482,7 @@ light.addBinding(state, 'density', { label: 'Threads', min: 0.4, max: 2.5, step:
 light.addBinding(state, 'texture', { label: 'Texture', min: 0, max: 2, step: 0.01 });
 light.addBinding(state, 'rim', { label: 'Edge rim', min: 0, max: 2.5, step: 0.01 });
 
-const colour = pane.addFolder({ title: 'Colour' });
+const colour = pane.addFolder({ title: 'Colour', expanded: false });
 colour.addBinding(state, 'shadow', { label: 'Shadow' });
 colour.addBinding(state, 'steel', { label: 'Steel' });
 colour.addBinding(state, 'silver', { label: 'Silver' });
@@ -405,6 +495,8 @@ colour.addBinding(state, 'warmDeep', { label: 'Fibre warm 3' });
 colour.addBinding(state, 'background', { label: 'Background' });
 colour.addBinding(state, 'warm', { label: 'Warmth', min: 0, max: 1, step: 0.01 });
 colour.addBinding(state, 'sparkle', { label: 'Fibres', min: 0, max: 1.5, step: 0.01 });
+// The colour pickers' RGB / HSL / HEX choice.
+colour.children.filter((b) => b.element.querySelector('select')).forEach((b) => menu(b));
 
 const shape = pane.addFolder({ title: 'Shape', expanded: false });
 shape.addBinding(state, 'corner', { label: 'Corner', min: 8, max: 70, step: 1 });
@@ -414,16 +506,25 @@ shape.addBinding(state, 'tip', { label: 'Tip', min: 16, max: 140, step: 1 });
 const perf = pane.addFolder({ title: 'Performance', expanded: false });
 perf.addBinding(state, 'quality', { label: 'Resolution', min: 0.4, max: 1, step: 0.05 });
 perf.addBinding(state, 'autoQuality', { label: 'Auto' });
+perf.addBinding(state, 'fps', {
+  label: 'Frame rate',
+  view: 'radiogrid',
+  groupName: 'fps',
+  size: [3, 1],
+  cells: (x) => ({ title: String([30, 60, 120][x]), value: [30, 60, 120][x] }),
+});
 perf.addBinding(stats, 'fps', { label: 'FPS', readonly: true, view: 'graph', min: 0, max: 130, interval: 500 });
 perf.addBinding(stats, 'resolution', { label: 'Pixels', readonly: true, interval: 500 });
 
+addEmbed(pane, 'wallpaper');
 pane.addButton({ title: 'Reset' }).on('click', () => {
   Object.assign(state, DEFAULTS, { view: state.view });
-  preset.size = Object.keys(SIZES)[0];
+  preset.size = presetOf();
   chosen.palette = 'XDR Blue';
   chosen.effect = 'Original';
   pane.refresh();
 });
+addLanguage(pane);
 
 // Any change: re-lay the letters if their shapes or spacing moved, resize
 // if the size or quality did, and redraw.
@@ -433,17 +534,41 @@ pane.on('change', (event) => {
   const key = event.target.key;
   if (LAYOUT.has(key)) relayout();
   if (SIZE.has(key)) {
-    preset.size = Object.keys(SIZES).find((k) => SIZES[k][0] === state.width && SIZES[k][1] === state.height) ?? 'Custom';
+    preset.size = presetOf();
+    presetBinding.refresh();
     resize();
   }
+  if (key === 'stretch') placeLetters();
+  stats.output = outputSize().join(' × ');
   setUniforms();
+  remember();
   dirty = true;
 });
+
+// What goes in the URL: the view, the palette and effect if not the first,
+// and every value that differs from where they start. The resolution is
+// left out while the page sets it itself.
+function remember() {
+  const base = { ...DEFAULTS, ...PALETTES[chosen.palette], ...EFFECTS[chosen.effect] };
+  const settings = [];
+  if (state.view === 'alphabet') settings.push(['view', 'az']);
+  if (chosen.palette !== 'XDR Blue') settings.push(['palette', slug(chosen.palette)]);
+  if (chosen.effect !== 'Original') settings.push(['effect', slug(chosen.effect)]);
+  for (const key of Object.keys(DEFAULTS)) {
+    if (key === 'view' || state[key] === base[key]) continue;
+    if (key === 'quality' && state.autoQuality) continue;
+    settings.push([key, format(state[key])]);
+  }
+  if (language.value === 'zh') settings.push(['lang', 'zh']);
+  save('wallpaper', settings);
+}
 
 // ---------- Start ----------
 
 addEventListener('keydown', (event) => {
+  // Not while typing, nor with a modifier (Cmd+Shift+R is a hard reload, not R).
   if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+  if (event.metaKey || event.ctrlKey || event.altKey || embedded) return;
   if (event.key === 'h' || event.key === 'H') {
     document.body.dataset.ui = document.body.dataset.ui === 'off' ? 'on' : 'off';
   }
@@ -455,11 +580,16 @@ addEventListener('keydown', (event) => {
   }
 });
 
+gl.uniform4f(u.uTile, 0, 0, 1, 1);
+stats.output = outputSize().join(' × ');
 setUniforms();
 relayout();
+remember();
 new ResizeObserver(resize).observe(stage.parentElement);
 resize();
+// The first frame is drawn straight away, whether or not the page is shown
+// yet; after that the pacer decides.
+draw();
 if (still === null) requestAnimationFrame(frame);
-else draw();
 
 window.__wall = { state, draw, pane };

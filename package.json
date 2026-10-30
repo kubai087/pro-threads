@@ -1,0 +1,27 @@
+{
+  "name": "pro-threads",
+  "version": "1.0.0",
+  "description": "Live WebGL thread-light scenes: <pro-threads> drops a PRO Threads wallpaper or hero scene into any page.",
+  "type": "module",
+  "main": "embed.js",
+  "exports": {
+    ".": "./embed.js",
+    "./embed.js": "./embed.js"
+  },
+  "files": [
+    "embed.js"
+  ],
+  "keywords": [
+    "webgl",
+    "web-component",
+    "hero",
+    "wallpaper",
+    "shader"
+  ],
+  "homepage": "https://www.kubai.design/pro-threads/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kubai087/pro-threads.git"
+  },
+  "license": "MIT"
+}

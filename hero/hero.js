@@ -1,22 +1,31 @@
 /*
  * Hero scenes for a landing page, made of the wallpaper's threads of light:
  * a ring, a black hole (ray traced, so its disk is seen bent round it), a
- * wide-angle view of a wall of threads rolling onto the floor, and a
- * tunnel running to a vanishing point. Each is drawn, then given a glow: what is bright is blurred at two
- * sizes and laid back over the picture.
+ * wide-angle view of a wall of threads rolling onto the floor, a Möbius
+ * strip larger than the screen, and a tunnel of threads running away into
+ * the dark. Each is drawn, then given a glow: what is bright is blurred at
+ * two sizes and laid back over the picture.
  *
- * URL options: ?scene=ring|blackhole|perspective|tunnel  ?palette=chroma
+ * URL options: ?scene=ring|blackhole|perspective|tunnel|mobius  ?palette=chroma
  *              ?ui=0 (no panel)  ?t=4 (hold one moment, for stills)
+ *              ?landing=0 (the scene alone, without the landing page laid over it)
+ *              ?layout=left|center (instead of the scene's own)
  * Keys: H toggles the panel, Space pauses.
  */
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+import * as Essentials from 'https://cdn.jsdelivr.net/npm/@tweakpane/plugin-essentials@0.2.1/dist/tweakpane-plugin-essentials.min.js';
 import { PALETTES } from '../palettes.js';
+import { menu } from '../menu.js';
+import { addLanguage, language } from '../i18n.js';
+import { params, embedded, save, pageUrl, format, slug as paletteSlug } from '../persist.js';
+import { createPacer } from '../pace.js';
+import { addEmbed } from '../share.js';
 import { SHAPES } from './shapes.js';
+import { createLanding } from './landing.js';
 import {
   RIBBON_VERT, RIBBON_FRAG, QUAD_VERT, BACKDROP_FRAG, BLACKHOLE_FRAG, BRIGHT_FRAG, BLUR_FRAG, COMPOSITE_FRAG,
 } from './shaders.js';
 
-const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('hero');
 const still = params.has('t') ? Number(params.get('t')) : null;
 if (params.get('ui') === '0') document.body.dataset.ui = 'off';
@@ -24,9 +33,8 @@ if (params.get('ui') === '0') document.body.dataset.ui = 'off';
 // ---------- Scenes ----------
 
 // How each ribbon scene is framed: where the camera sits and looks, its
-// field of view, what the shape turns about (or that it holds still),
-// where the light comes from, and the glow behind it, from a point in
-// the scene.
+// field of view, what the shape turns about (or that it holds still), and
+// where the light comes from.
 const SCENES = {
   Ring: { eye: [0, 0.82, 2.5], target: [0, -0.08, 0], fov: 40, spin: [0.12, 1, 0], light: [-0.5, 0.9, 0.5], sheen: 0.22 },
   'Black Hole': { blackHole: true },
@@ -37,15 +45,33 @@ const SCENES = {
   // lit like the wallpaper instead, with light falling from the top.
   Perspective: {
     eye: [0, 1.25, 3.1], target: [0, 1.25, 0], fov: 100, spin: [0, 1, 0], fixed: true, light: [-0.35, 0.6, 0.9],
-    sheen: 0.18, fall: [1, 3.2, 0.2], pool: [6.38, 0.5, 2.6], fog: [7, 16], grade: [1.2, 1.4],
+    sheen: 0.18, fall: [1, 4.4, 0.28], pool: [6.38, 0.22, 0.42, 4.5], fog: [7, 16], grade: [1.2, 1.4],
+    // Close up the threads would read thick, so there are more of them, finer,
+    // with more glow round them.
+    threads: 4, glow: 1.35,
   },
-  Tunnel: { eye: [0, 0, 0], target: [0, 0, -10], fov: 62, spin: [0, 0, 1], light: [0.6, 0.8, 0.25], point: [0, 0, -14], fog: [1.5, 14], sheen: 0.3, gain: 0.8 },
+  // A Möbius strip seen from a little above, turning slowly.
+  // A Möbius strip larger than the screen, leaning toward the camera so it
+  // reads nearly as a circle, its centre always somewhere off screen: only
+  // a sweep of the band crosses the frame. As it turns, the centre wanders
+  // round outside the screen's edges and the strip rocks a little (drift),
+  // never quite repeating.
+  'Möbius': {
+    eye: [0, 0, 3.2], target: [0, 0, 0], fov: 40, spin: [0, 1, 0], light: [-0.5, 0.9, 0.5], sheen: 0.22, gain: 0.85,
+    fog: [5, 9], threads: 2, drift: { lean: 1.15, tilt: 0.22, outside: 0.3 },
+  },
+  // Down a long tube of fine threads that fade to black well before its
+  // end, so the end never shows.
+  Tunnel: {
+    eye: [0, 0, 0], target: [0, 0, -10], fov: 62, spin: [0, 0, 1], light: [0.6, 0.8, 0.25],
+    fog: [3, 24], sheen: 0.3, gain: 0.9, threads: 3, grade: [1.3, 1.1],
+  },
 };
-const slug = (name) => name.toLowerCase().replace(/[^a-z]/g, '');
+const slug = (name) => name.normalize('NFD').toLowerCase().replace(/[^a-z]/g, '');
 
 const DEFAULTS = {
-  scene: Object.keys(SCENES).find((k) => slug(k) === params.get('scene')) ?? 'Ring',
-  palette: Object.keys(PALETTES).find((k) => k.toLowerCase().replace(/ /g, '-') === params.get('palette')) ?? 'XDR Blue',
+  scene: 'Ring',
+  palette: 'XDR Blue',
   speed: 1,
   spin: 1,
   zoom: 1,
@@ -59,12 +85,40 @@ const DEFAULTS = {
   contrast: 1,
   saturation: 1,
   parallax: true,
+  landing: true,
+  // Auto takes each scene's own layout (landing.js).
+  layout: 'Auto',
   quality: (devicePixelRatio || 1) >= 2 ? 0.75 : 1,
+  // Lower the resolution when frames run slow; the most frames a second.
+  autoQuality: true,
+  fps: 60,
   paused: false,
 };
+const LAYOUTS = ['Auto', 'Left', 'Center'];
+
+// Settings from the URL over the defaults.
 const state = { ...DEFAULTS };
-for (const key of ['speed', 'spin', 'zoom', 'threads', 'sheen', 'gain', 'warm', 'sparkle', 'glow', 'threshold', 'contrast', 'saturation', 'quality']) {
-  if (params.has(key)) state[key] = Number(params.get(key));
+state.scene = Object.keys(SCENES).find((k) => slug(k) === params.get('scene')) ?? state.scene;
+state.palette = Object.keys(PALETTES).find((k) => paletteSlug(k) === params.get('palette')) ?? state.palette;
+state.layout = LAYOUTS.find((k) => k.toLowerCase() === params.get('layout')) ?? state.layout;
+for (const [key, fallback] of Object.entries(DEFAULTS)) {
+  if (!params.has(key) || typeof fallback === 'string') continue;
+  state[key] = typeof fallback === 'boolean' ? params.get(key) !== '0' : Number(params.get(key));
+}
+
+// What goes in the URL: every setting that differs from the defaults
+// (the resolution not while the page sets it itself).
+function remember() {
+  const settings = [];
+  for (const [key, fallback] of Object.entries(DEFAULTS)) {
+    if (state[key] === fallback || (key === 'quality' && state.autoQuality)) continue;
+    if (key === 'scene') settings.push([key, slug(state.scene)]);
+    else if (key === 'palette') settings.push([key, paletteSlug(state.palette)]);
+    else if (key === 'layout') settings.push([key, state.layout.toLowerCase()]);
+    else settings.push([key, format(state[key])]);
+  }
+  if (language.value === 'zh') settings.push(['lang', 'zh']);
+  save('hero', settings);
 }
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
@@ -97,7 +151,18 @@ const rotation = (axis, angle) => {
     0, 0, 0, 1,
   ];
 };
-const apply = (m, v) => [0, 1, 2, 3].map((r) => m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3]);
+// a then b (column-major 4 x 4).
+const mul = (a, b) => Array.from({ length: 16 }, (_, i) => {
+  const c = Math.floor(i / 4);
+  const r = i % 4;
+  return a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+});
+// A slow wander for time t: sums of sines at unrelated rates, -1 to 1 each way.
+const wander = (t) => [
+  0.6 * Math.sin(t * 0.071 + 0.4) + 0.4 * Math.sin(t * 0.163 + 2.1),
+  0.6 * Math.sin(t * 0.089 + 1.3) + 0.4 * Math.sin(t * 0.137 + 4.0),
+  0.6 * Math.sin(t * 0.059 + 3.2) + 0.4 * Math.sin(t * 0.191 + 0.7),
+];
 
 // ---------- WebGL ----------
 
@@ -143,7 +208,7 @@ gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 const meshes = {};
 function ribbonMesh(name) {
   if (meshes[name]) return meshes[name];
-  const { data, index, length, closed, wrap } = SHAPES[name]();
+  const { data, index, length, closed, wrap, flip } = SHAPES[name]();
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -155,7 +220,7 @@ function ribbonMesh(name) {
   });
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, index, gl.STATIC_DRAW);
-  meshes[name] = { vao, count: index.length, length, closed, wrap };
+  meshes[name] = { vao, count: index.length, length, closed, wrap, flip };
   return meshes[name];
 }
 
@@ -241,13 +306,14 @@ function palette(u) {
   return p;
 }
 
-// Draws the scene into the multisampled target.
+// Draws the scene into the multisampled target, or, for the black hole (one
+// full-screen pass, with no edges to smooth), straight into the picture.
 function drawScene() {
   const scene = SCENES[state.scene];
   const { w, h } = targets;
   const aspect = w / h;
   const p = PALETTES[state.palette];
-  gl.bindFramebuffer(gl.FRAMEBUFFER, targets.msFbo);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.blackHole ? targets.scene.fbo : targets.msFbo);
   gl.viewport(0, 0, w, h);
   gl.bindVertexArray(quad);
   gl.disable(gl.DEPTH_TEST);
@@ -288,19 +354,10 @@ function drawScene() {
   const view = lookAt(eye, scene.target, [0, 1, 0]);
   const proj = perspective(scene.fov, aspect, 0.05, 40);
 
-  // The backdrop, with the light behind the shape where it lands on screen.
-  const src = [0.5, 0.5, scene.point ? 1 : 0];
-  if (scene.point) {
-    const c = apply(proj, apply(view, [...scene.point, 1]));
-    src[0] = 0.5 + 0.5 * (c[0] / c[3]);
-    src[1] = 0.5 - 0.5 * (c[1] / c[3]);
-  }
   gl.useProgram(backdropProg.p);
   gl.uniform3fv(backdropProg.u.uBg, rgb(p.background));
   gl.uniform3fv(backdropProg.u.uTint, rgb(p.steel));
-  gl.uniform3fv(backdropProg.u.uHot, rgb(p.highlight));
   gl.uniform1f(backdropProg.u.uAspect, aspect);
-  gl.uniform3fv(backdropProg.u.uSource, src);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
   gl.enable(gl.DEPTH_TEST);
@@ -312,15 +369,32 @@ function drawScene() {
   const angle = scene.fixed ? 0 : scene.sway ? Math.sin(clock * 0.3 * state.spin) * scene.sway : clock * 0.12 * state.spin;
   gl.uniformMatrix4fv(u.uProj, false, proj);
   gl.uniformMatrix4fv(u.uView, false, view);
-  gl.uniformMatrix4fv(u.uModel, false, rotation(scene.spin, angle));
+  let model = rotation(scene.spin, angle);
+  if (scene.drift) {
+    const t = clock * state.spin;
+    const sway = wander(t);
+    const lean = scene.drift.lean + sway[1] * scene.drift.tilt;
+    model = mul(mul(rotation([1, 0, 0], lean), rotation([0, 0, 1], sway[2] * scene.drift.tilt)), model);
+    // The centre goes round, unevenly, on a loop just outside the screen:
+    // in each direction, out past whichever edge it meets first.
+    const halfH = dist * Math.tan((scene.fov * Math.PI) / 360);
+    const halfW = halfH * aspect;
+    const a = t * 0.045 + 1.2 * Math.sin(t * 0.031 + 0.5) + 0.6 * Math.sin(t * 0.077 + 2.0);
+    const out = (1 + scene.drift.outside) / Math.max(Math.abs(Math.cos(a)) / halfW, Math.abs(Math.sin(a)) / halfH);
+    model[12] = scene.target[0] + Math.cos(a) * out;
+    model[13] = scene.target[1] + Math.sin(a) * out;
+    model[14] = scene.target[2] + sway[0] * 0.3;
+  }
+  gl.uniformMatrix4fv(u.uModel, false, model);
   gl.uniform3fv(u.uEye, eye);
   gl.uniform3fv(u.uLight, scene.light);
   gl.uniform3fv(u.uBg, rgb(p.background));
   gl.uniform2fv(u.uFog, scene.fog ?? [dist * 0.9, dist + 2.4]);
-  gl.uniform1f(u.uThreads, (mesh.wrap ? 420 : 260) * state.threads);
+  gl.uniform1f(u.uThreads, (mesh.wrap ? 420 : 260) * (scene.threads ?? 1) * state.threads);
   gl.uniform1f(u.uSheen, state.sheen * (scene.sheen ?? 1));
   gl.uniform3fv(u.uFall, scene.fall ?? [0, 1, 1]);
-  gl.uniform3fv(u.uPool, scene.pool ?? [0, 0, 1]);
+  gl.uniform4fv(u.uPool, scene.pool ?? [0, 0, 0, 1]);
+  gl.uniform1f(u.uFlip, mesh.flip ? 1 : 0);
   gl.uniform1f(u.uLoop, mesh.closed ? mesh.length : 0);
   gl.uniform1f(u.uWrap, mesh.wrap ? 1 : 0);
   gl.bindVertexArray(mesh.vao);
@@ -332,9 +406,11 @@ function draw() {
   makeTargets(canvas.width, canvas.height);
   drawScene();
   // Resolve the multisampled picture into a texture.
-  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, targets.msFbo);
-  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, targets.scene.fbo);
-  gl.blitFramebuffer(0, 0, targets.w, targets.h, 0, 0, targets.w, targets.h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+  if (!SCENES[state.scene].blackHole) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, targets.msFbo);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, targets.scene.fbo);
+    gl.blitFramebuffer(0, 0, targets.w, targets.h, 0, 0, targets.w, targets.h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+  }
   // The glow: keep the bright parts, blur them near and wide, lay them over.
   const { scene, n1, n2, w1, w2 } = targets;
   pass(brightProg, n1, { uSrc: scene }, (u) => {
@@ -353,7 +429,7 @@ function draw() {
   // saturation then scale.
   const grade = SCENES[state.scene].grade ?? [1, 1];
   pass(compositeProg, null, { uScene: scene, uNear: n1, uWide: w1 }, (u) => {
-    gl.uniform1f(u.uGlow, state.glow);
+    gl.uniform1f(u.uGlow, state.glow * (SCENES[state.scene].glow ?? 1));
     gl.uniform2f(u.uGrade, grade[0] * state.contrast, grade[1] * state.saturation);
   });
   window.__heroDrawn = true;
@@ -364,18 +440,33 @@ function resize() {
   const density = (devicePixelRatio || 1) * state.quality;
   canvas.width = Math.max(1, Math.round(box.width * density));
   canvas.height = Math.max(1, Math.round(box.height * density));
+  dirty = true;
   if (still !== null) draw();
 }
 
+// Frames: drawn when the pacer allows (the frame-rate cap, on screen, page
+// shown) and, while paused, only as long as something still moves (the
+// pointer easing) or changed. If frames keep running slow, draw fewer pixels.
+const pacer = createPacer(canvas);
 let last = null;
+let dirty = true;
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = last === null ? 0 : Math.min(0.1, (now - last) / 1000);
   last = now;
   if (!state.paused) clock += dt * state.speed;
+  const [px, py] = [pointer.x, pointer.y];
   pointer.x += (pointer.tx - pointer.x) * Math.min(1, dt * 3);
   pointer.y += (pointer.ty - pointer.y) * Math.min(1, dt * 3);
+  const moving = !state.paused || dirty || Math.abs(pointer.x - px) + Math.abs(pointer.y - py) > 1e-5;
+  if (!moving || !pacer.ready(now, state.fps)) return;
   draw();
+  dirty = false;
+  if (pacer.drew(now, state.fps) && state.autoQuality && !state.paused && state.quality > 0.5) {
+    state.quality = Math.max(0.5, Math.round((state.quality - 0.1) * 100) / 100);
+    resize();
+    pane.refresh();
+  }
 }
 
 // Saves a PNG at twice the canvas's size.
@@ -398,6 +489,7 @@ function savePng() {
 // ---------- Panel ----------
 
 const pane = new Pane({ container: document.querySelector('.sidebar'), title: 'PRO Threads' });
+pane.registerPlugin(Essentials);
 const opts = (keys) => Object.fromEntries(keys.map((k) => [k, k]));
 // The same tabs as the wallpaper's: PRO and A–Z go back to it, taking the
 // palette along; Shapes is this page.
@@ -405,15 +497,21 @@ const tabs = pane.addTab({ pages: [{ title: 'PRO' }, { title: 'A–Z' }, { title
 tabs.pages[2].selected = true;
 tabs.on('select', (event) => {
   if (event.index === 2) return;
-  const palette = state.palette.toLowerCase().replace(/ /g, '-');
-  location.href = `../?${event.index === 1 ? 'view=az&' : ''}palette=${palette}`;
+  location.href = pageUrl('wallpaper', '../', {
+    view: event.index === 1 ? 'az' : null,
+    palette: state.palette === 'XDR Blue' ? null : paletteSlug(state.palette),
+    lang: language.value === 'zh' ? 'zh' : null,
+  });
 });
-tabs.pages[2].addBinding(state, 'scene', { label: 'Scene', options: opts(Object.keys(SCENES)) });
-tabs.pages[2].addBinding(state, 'palette', { label: 'Palette', options: opts(Object.keys(PALETTES)) });
+menu(tabs.pages[2].addBinding(state, 'scene', { label: 'Scene', options: opts(Object.keys(SCENES)) }));
+menu(tabs.pages[2].addBinding(state, 'palette', { label: 'Palette', options: opts(Object.keys(PALETTES)) }));
+tabs.pages[2].addBinding(state, 'landing', { label: 'Landing page' });
+const layoutBinding = tabs.pages[2].addBinding(state, 'layout', { label: 'Layout', options: opts(LAYOUTS) });
+menu(layoutBinding);
 
 const motion = pane.addFolder({ title: 'Motion' });
 motion.addBinding(state, 'speed', { label: 'Light speed', min: 0, max: 3, step: 0.01 });
-motion.addBinding(state, 'spin', { label: 'Turn', min: 0, max: 3, step: 0.01 });
+const turnBinding = motion.addBinding(state, 'spin', { label: 'Turn', min: 0, max: 3, step: 0.01 });
 motion.addBinding(state, 'parallax', { label: 'Parallax' });
 motion.addBinding(state, 'paused', { label: 'Paused' });
 
@@ -433,10 +531,40 @@ glow.addBinding(state, 'threshold', { label: 'From', min: 0.2, max: 0.95, step: 
 
 const perf = pane.addFolder({ title: 'Performance', expanded: false });
 perf.addBinding(state, 'quality', { label: 'Resolution', min: 0.4, max: 1, step: 0.05 });
+perf.addBinding(state, 'autoQuality', { label: 'Auto' });
+perf.addBinding(state, 'fps', {
+  label: 'Frame rate',
+  view: 'radiogrid',
+  groupName: 'fps',
+  size: [3, 1],
+  cells: (x) => ({ title: String([30, 60, 120][x]), value: [30, 60, 120][x] }),
+});
 pane.addButton({ title: 'Save PNG' }).on('click', savePng);
+addEmbed(pane, 'hero');
+// Back to the defaults, keeping the scene shown.
+pane.addButton({ title: 'Reset' }).on('click', () => {
+  Object.assign(state, DEFAULTS, { scene: state.scene });
+  pane.refresh();
+});
+addLanguage(pane);
+
+const landing = createLanding(document.querySelector('.view'));
+
+// What follows any change: the landing page, which controls apply (the
+// layout only with the landing page shown, the turn only for a scene that
+// turns), the URL and, when holding one moment, the picture.
+function settle() {
+  landing.update(state);
+  layoutBinding.disabled = !state.landing;
+  turnBinding.disabled = !!SCENES[state.scene].fixed;
+  remember();
+}
+settle();
 
 pane.on('change', (event) => {
   if (event.target.key === 'quality') resize();
+  dirty = true;
+  settle();
   if (still !== null) draw();
 });
 
@@ -447,7 +575,8 @@ addEventListener('pointermove', (event) => {
   pointer.ty = (event.clientY / innerHeight) * 2 - 1;
 });
 addEventListener('keydown', (event) => {
-  if (event.target.tagName === 'INPUT') return;
+  // Not while typing, nor with a modifier (those are the browser's shortcuts).
+  if (event.target.tagName === 'INPUT' || event.metaKey || event.ctrlKey || event.altKey || embedded) return;
   if (event.key === 'h' || event.key === 'H') document.body.dataset.ui = document.body.dataset.ui === 'off' ? 'on' : 'off';
   if (event.key === ' ') {
     state.paused = !state.paused;
@@ -457,6 +586,8 @@ addEventListener('keydown', (event) => {
 });
 new ResizeObserver(resize).observe(canvas);
 resize();
+// The first frame is drawn straight away, whether or not the page is shown
+// yet; after that the pacer decides.
+draw();
 if (still === null) requestAnimationFrame(frame);
-else draw();
 window.__hero = { state, draw, pane };

@@ -8,9 +8,10 @@ import { MAX_ROWS, SHEET_TEXELS } from './letters.js';
 
 export const VERT = `#version 300 es
   in vec2 aPos;
+  uniform vec4 uTile;         // the part of the stage drawn: offset, size
   out vec2 vUv;
   void main() {
-    vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5);
+    vUv = uTile.xy + vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5) * uTile.zw;
     gl_Position = vec4(aPos, 0.0, 1.0);
   }`;
 
@@ -22,10 +23,10 @@ export const FRAG = `#version 300 es
   uniform int uRowCount;
   uniform float uRowPitch;
   uniform float uAspect;      // the stage, width over height
-  uniform vec3 uFrame;        // where the letters sit on it: offset, scale
+  uniform vec4 uFrame;        // where the letters sit on it: offset, scale across and down
   uniform float uCell;
   uniform float uGap;
-  uniform float uPx;          // one pixel, in the letters' frame
+  uniform vec2 uPx;           // one pixel, in the letters' frame: across, down
   uniform float uTime;        // the light's clock
   uniform float uFibreTime;   // the coloured threads' clock
   uniform float uDensity;
@@ -218,6 +219,8 @@ export const FRAG = `#version 300 es
     // its colours sliding slowly down, then fades and lights up on another
     // thread of the letter. The first time round it sits where the
     // original has it, fully lit.
+    // Squeezed across, a fibre gives up only part of its width.
+    float squeeze = sqrt(uPx.x / uPx.y);
     for (int i = 0; i < 4; i++) {
       vec4 ac = texelFetch(uSheetTex, ivec2(SHEET_TEXELS + i * 3, letter), 0);
       if (ac.x > 100.0) break;
@@ -229,7 +232,7 @@ export const FRAG = `#version 300 es
       if (lap > 0.5) {
         float seed = home.z + lap * 1.7;
         ac.x = mix(home.x + 0.03, home.y - 0.03, hash(seed));
-        if (abs(psi - ac.x) > 0.008) continue;
+        if (abs(psi - ac.x) > 0.008 * squeeze) continue;
         ac.y = mix(0.03, 0.28, hash(seed + 2.9));
         ac.z = min(0.98, ac.y + mix(0.5, 0.9, hash(seed + 4.3)));
         ac.w = hash(seed + 6.1);
@@ -238,7 +241,7 @@ export const FRAG = `#version 300 es
         heat.z = hash(seed + 11.3) < 0.2 ? 1.0 : 0.0;
         if (hash(seed + 13.1) < 0.2) heat.xy = vec2(2.0);
       }
-      float d = abs(psi - ac.x);
+      float d = abs(psi - ac.x) / squeeze;
       if (d > 0.008) continue;
       float fade = smoothstep(0.0, 0.18, age) * smoothstep(1.0, 0.8, age);
       // Its colours slide down while it lives.
@@ -270,32 +273,42 @@ export const FRAG = `#version 300 es
     return col;
   }
 
-  // Adds a letter's sheets at (x, y): the brighter of overlapping sheets
-  // shows, and covered keeps how much of the pixel they fill.
+  float luma(vec3 c) { return dot(c, vec3(0.3, 0.6, 0.1)); }
+
+  // Adds a letter's sheets at (x, y), and covered keeps how much of the
+  // pixel they fill.
   void addLetter(int letter, float x, float y, inout vec3 col, inout float covered) {
     for (int k = 0; k < 4; k++) {
       vec4 a = texelFetch(uSheetTex, ivec2(k * 3, letter), 0);
       if (a.x > 100.0) break;
-      if (y < a.z - uPx || y > a.w + uPx) continue;
+      if (y < a.z - uPx.y || y > a.w + uPx.y) continue;
       vec4 b = texelFetch(uSheetTex, ivec2(k * 3 + 1, letter), 0);
       vec4 c = texelFetch(uSheetTex, ivec2(k * 3 + 2, letter), 0);
 
       // The thread here, and how fast psi changes across and down, so
-      // edges are smoothed over one pixel whichever way they run.
+      // edges are smoothed over one pixel whichever way they run. grad is
+      // per pixel, so the sides stay one pixel soft when the letters are
+      // stretched.
       vec2 t = thread(a, b, c, x, y);
       float psi = t.x;
       float dx = 1.0 / t.y;
-      float dy = (thread(a, b, c, x, y + uPx).x - psi) / uPx;
-      float grad = length(vec2(dx, dy));
-      float cover = smoothstep(-uPx, uPx, (psi - a.x) / grad)
-        * smoothstep(-uPx, uPx, (a.y - psi) / grad)
-        * smoothstep(-uPx, uPx, y - a.z)
-        * smoothstep(-uPx, uPx, a.w - y);
+      float dy = (thread(a, b, c, x, y + uPx.y).x - psi) / uPx.y;
+      float grad = length(vec2(dx * uPx.x, dy * uPx.y));
+      float cover = smoothstep(-1.0, 1.0, (psi - a.x) / grad)
+        * smoothstep(-1.0, 1.0, (a.y - psi) / grad)
+        * smoothstep(-uPx.y, uPx.y, y - a.z)
+        * smoothstep(-uPx.y, uPx.y, a.w - y);
       if (cover <= 0.0) continue;
 
       float cap = a.z < 0.01 ? exp(-(y - a.z) / 0.02) : 0.0;
-      float edge = min(psi - a.x, a.y - psi) / grad;
-      col = max(col, shade(psi, (abs(dx) + abs(dy)) * uPx, abs(dy / dx), edge, a, int(c.z + 0.5), y, cap, letter) * cover);
+      float edge = min(psi - a.x, a.y - psi) / grad * sqrt(uPx.x * uPx.y);
+      vec3 sheet = shade(psi, abs(dx) * uPx.x + abs(dy) * uPx.y, abs(dy / dx), edge, a, int(c.z + 0.5), y, cap, letter) * cover;
+      // Where sheets cross (over a slit, under a tip) they show through
+      // each other like translucent strands, so both sets of threads and
+      // both edges stay visible. The closer their brightness, the more
+      // evenly they mix; a bright tip over a dark sheet stays bright.
+      float near = min(luma(col), luma(sheet)) / max(max(luma(col), luma(sheet)), 1e-4);
+      col = mix(max(col, sheet), (col + sheet) * 0.5, covered * cover * near);
       covered = max(covered, cover);
     }
   }
@@ -303,7 +316,7 @@ export const FRAG = `#version 300 es
   void main() {
     // Into the letters' own frame, where a letter is one unit tall.
     float x = (vUv.x * uAspect - uFrame.x) / uFrame.z;
-    float y = (vUv.y - uFrame.y) / uFrame.z;
+    float y = (vUv.y - uFrame.y) / uFrame.w;
     outColor = vec4(uBg, 1.0);
 
     // Which row, and which letter in it.

@@ -81,6 +81,9 @@ function band(points, { w, closed = false, axis = null, twist = 0 }) {
     for (let j = 0; j < 7; j++) row.push(add(points[k], scale(b, w * (-1 + 2 * j / 6))));
     rows.push(row);
   }
+  // The closing row lands back on the first (turned over by an odd twist);
+  // it reuses those exact points so the join has no pinholes.
+  if (closed) rows[count - 1] = twist % 2 ? [...rows[0]].reverse() : rows[0];
   return { ...mesh(rows, -1, 1), closed };
 }
 
@@ -118,13 +121,25 @@ export const SHAPES = {
   // One wide wall of threads coming straight down, rolling over a rounded
   // edge onto the floor and running on toward the viewer.
   Perspective: () => band(wallToFloor(0, 0, { height: 6.5, r: 0.55, run: 6.5, fan: 0 }), { w: 4.4, axis: [1, 0, 0] }),
+  // A Möbius strip: a band carried once round a circle while it makes a
+  // half turn, so its one side and its one edge run on into themselves.
+  // Coming back round, its threads meet themselves in the other order
+  // (flip), which the shader blends across.
+  'Möbius': () => {
+    const pts = [];
+    for (let i = 0; i < 1400; i++) {
+      const th = (TAU * i) / 1400;
+      pts.push([2.4 * Math.cos(th), 0, 2.4 * Math.sin(th)]);
+    }
+    return { ...band(pts, { w: 0.55, closed: true, twist: 1 }), flip: true };
+  },
   // The inside of a long tube, its threads running away to a vanishing
   // point. v runs once round; the shader joins its two ends seamlessly.
   Tunnel: () => {
     const rows = [];
     const around = 97;
-    for (let i = 0; i <= 900; i++) {
-      const z = 3 - 17 * (i / 900);
+    for (let i = 0; i <= 1600; i++) {
+      const z = 3 - 43 * (i / 1600);
       rows.push(Array.from({ length: around }, (_, j) => {
         const a = TAU * (j / (around - 1));
         return [Math.cos(a), Math.sin(a), z];
