@@ -4,7 +4,7 @@ An animated, real-time WebGL wallpaper: letters made of thousands of fine thread
 
 一个实时渲染的 WebGL 动态壁纸：字母由成千上万根细光线组成，线条整体弯折、甩尖、发光。灵感来自 MacBook Pro PROLED XDR 壁纸的视觉风格，用着色器从零重写，并扩展成完整的 A–Z 字体，带配色预设和参数面板。
 
-**Live demo / 在线体验：** <https://www.kubai.design/pro-threads/> · [A–Z](https://www.kubai.design/pro-threads/?view=az) · [Chroma](https://www.kubai.design/pro-threads/?palette=chroma) · [Ember](https://www.kubai.design/pro-threads/?palette=ember&effect=glow)
+**Live demo / 在线体验：** <https://www.kubai.design/pro-threads/> · [A–Z](https://www.kubai.design/pro-threads/?view=az) · [Chroma](https://www.kubai.design/pro-threads/?palette=chroma) · [Ember](https://www.kubai.design/pro-threads/?palette=ember&effect=glow) · **[Hero scenes](https://www.kubai.design/pro-threads/hero/)**
 
 ![PRO in the default palette](media/pro.jpg)
 
@@ -21,6 +21,18 @@ An animated, real-time WebGL wallpaper: letters made of thousands of fine thread
 ![The A–Z thread typeface](media/alphabet.jpg)
 
 ![Palettes](media/palettes.jpg)
+
+## Hero scenes
+
+The same threads of light, as first screens for a landing page: a **ring**, a **black hole** (photon ring, bent halo and an accretion disk that turns faster near the hole), a **portal** (a slit of light between two walls whose threads fan out across the floor) and a **tunnel** to a glowing vanishing point. Each is drawn with a real glow pass, takes about 2 ms a frame, and follows the pointer with a little parallax.
+
+同样的光线丝线，做成落地页首屏：**圆环**、**黑洞**（光子环、引力弯折的光晕、内快外慢的吸积盘）、**光缝**（两面墙之间的一道光，墙底的丝线在地面散开）和**隧道**（冲向发光消失点的一点透视），全部带辉光。
+
+[Open the hero scenes →](https://www.kubai.design/pro-threads/hero/) · [Black hole](https://www.kubai.design/pro-threads/hero/?scene=blackhole) · [Portal](https://www.kubai.design/pro-threads/hero/?scene=portal&palette=violet) · [Tunnel](https://www.kubai.design/pro-threads/hero/?scene=tunnel&palette=ocean)
+
+![Hero scenes: ring, black hole, portal, tunnel](media/hero.jpg)
+
+URL options: `?scene=ring|blackhole|portal|tunnel`, `?palette=chroma`, `?ui=0`. Keys: `H` hides the panel, `Space` pauses.
 
 ## Run it
 
@@ -52,7 +64,7 @@ Because the offset is linear in a thread's coordinate **ψ**, each pixel can sol
 
 Per-thread variation comes from hashes of ψ and three layers of value noise weighted to match the original's measured texture.
 
-Files: `letters.js` (the letters and layout), `shader.js` (the shader), `wallpaper.js` (rendering and the panel, built with [Tweakpane](https://tweakpane.github.io/docs/)).
+Files: `letters.js` (the letters and layout), `shader.js` (the shader), `wallpaper.js` (rendering and the panel, built with [Tweakpane](https://tweakpane.github.io/docs/)), `palettes.js` (shared by both pages), and `hero/` (the hero scenes: ribbon meshes, the black hole shader and the glow pass).
 
 ## Reference image
 

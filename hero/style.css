@@ -1,0 +1,47 @@
+:root { --panel-w: 300px; }
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #000000;
+}
+
+body[data-ui="off"] { --panel-w: 0px; }
+
+.view {
+  position: fixed;
+  inset: 0 var(--panel-w) 0 0;
+}
+
+#hero {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--panel-w);
+  box-sizing: border-box;
+  padding: 12px;
+  overflow-y: auto;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: #111215;
+  scrollbar-width: thin;
+}
+
+body[data-ui="off"] .sidebar { display: none; }
+
+.sidebar .tp-rotv {
+  --tp-base-background-color: #1a1c21;
+  --tp-container-background-color: rgba(255, 255, 255, 0.06);
+  --tp-input-background-color: rgba(255, 255, 255, 0.07);
+  --tp-label-foreground-color: #a8aebb;
+  --cnt-usz: 22px;
+  font-size: 12px;
+}
