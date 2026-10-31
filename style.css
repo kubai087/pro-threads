@@ -86,3 +86,32 @@ body[data-ui="off"] .sidebar { display: none; }
   --cnt-usz: 22px;
   font-size: 12px;
 }
+
+/* Phones: the scene on top, the settings in a sheet below it. */
+@media (max-width: 720px) {
+  :root {
+    --panel-w: 0px;
+    --sheet-h: min(56dvh, 520px);
+  }
+
+  body[data-ui="off"] { --sheet-h: 0px; }
+
+  .view { inset: 0 0 var(--sheet-h) 0; }
+
+  .sidebar {
+    top: auto;
+    left: 0;
+    width: auto;
+    height: var(--sheet-h);
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 0;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Fingers: taller rows, and text fields large enough that the page doesn't zoom in on them. */
+@media (pointer: coarse) {
+  .sidebar .tp-rotv { --cnt-usz: 30px; font-size: 13px; }
+  .sidebar input { font-size: 16px; }
+}

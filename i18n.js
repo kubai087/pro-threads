@@ -114,6 +114,7 @@ const ZH = {
   'Guide on GitHub →': 'GitHub 上的教程 →',
   'Paste this where the scene should go. It fills the box you give it, with the settings you see now.': '把这段代码贴到要放场景的位置。场景会铺满你给它的区域，并保留现在看到的设置。',
   Language: '语言',
+  Settings: '设置',
 };
 
 export const language = { value: params.get('lang')?.toLowerCase().startsWith('zh') ? 'zh' : 'en' };

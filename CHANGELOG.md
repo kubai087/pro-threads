@@ -22,5 +22,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Stills.** `?t=` holds a single moment for screenshots, and `?ui=0` hides the panel.
 - **Robust embedding.** Embedded scenes fetch no panel library or fonts, fade in once drawn, hold still for reduced motion, show a still without WebGL 2, reload after a lost GPU context, clamp or ignore bad settings, and unload when far out of view with many on a page; `embed.js` is safe to import during server rendering.
 - **Chinese README** (`README.zh-CN.md`).
+- **Phone layout.** On narrow screens the scene fills the page and the panel opens as a sheet below it from a settings button; touch screens get larger controls and the system's own pickers.
 
 [Unreleased]: https://github.com/kubai087/pro-threads/commits/main

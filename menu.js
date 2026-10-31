@@ -133,7 +133,8 @@ export function menu(binding, { groups, detail } = {}) {
   }
   const select = binding.element?.querySelector('select');
   // Without the panel (embedded, or its library unavailable) there is no select.
-  if (!select) return;
+  // On touch screens the system's own picker suits a finger better.
+  if (!select || matchMedia('(pointer: coarse)').matches) return;
   const isOpen = () => current?.select === select;
   select.addEventListener('mousedown', (event) => {
     event.preventDefault();
