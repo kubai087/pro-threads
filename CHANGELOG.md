@@ -24,4 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Chinese README** (`README.zh-CN.md`).
 - **Phone layout.** On narrow screens the scene fills the page and the panel opens as a sheet below it from a settings button; touch screens get larger controls and the system's own pickers.
 
+### Fixed
+
+- **Letter spacing.** Letters are as wide as their threads, so a narrow I no longer sits in a full-width cell with a wide gap either side; it keeps a little room where it faces another letter.
+
 [Unreleased]: https://github.com/kubai087/pro-threads/commits/main

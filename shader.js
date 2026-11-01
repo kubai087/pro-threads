@@ -4,7 +4,7 @@
  * letter's sheets, and shades it. See letters.js for how the sheets and
  * coloured threads are packed into uSheetTex.
  */
-import { MAX_ROWS, SHEET_TEXELS } from './letters.js';
+import { MAX_CELLS, MAX_ROWS, SHEET_TEXELS } from './letters.js';
 
 export const VERT = `#version 300 es
   in vec2 aPos;
@@ -24,7 +24,7 @@ export const FRAG = `#version 300 es
   uniform float uRowPitch;
   uniform float uAspect;      // the stage, width over height
   uniform vec4 uFrame;        // where the letters sit on it: offset, scale across and down
-  uniform float uCell;
+  uniform vec2 uSpan[${MAX_CELLS}];
   uniform float uGap;
   uniform vec2 uPx;           // one pixel, in the letters' frame: across, down
   uniform float uTime;        // the light's clock
@@ -325,21 +325,26 @@ export const FRAG = `#version 300 es
     vec4 line = uRows[row];
     y -= float(row) * uRowPitch;
     x -= line.x;
-    float pitch = uCell + uGap;
-    int slot = int(floor((x + uGap * 0.5) / pitch));
-    if (slot < 0 || float(slot) >= line.z) return;
+    // Letters are as wide as their sheets, so walk the row to the last
+    // one starting before x; each owns half the gap either side.
+    int slot = -1;
+    for (int i = 0; i < ${MAX_CELLS}; i++) {
+      if (float(i) >= line.z || x < uSpan[int(line.y) + i].x - uGap * 0.5) break;
+      slot = i;
+    }
+    if (slot < 0 || x > uSpan[int(line.y) + slot].y + uGap * 0.5) return;
     int letter = int(line.y) + slot;
 
     // This letter, and its neighbour when the pixel is near a side, since
     // a foot's tip runs on under the next letter.
     vec3 col = vec3(0.0);
     float covered = 0.0;
-    float left = x - float(slot) * pitch;
+    vec2 span = uSpan[letter];
     for (int n = -1; n <= 1; n++) {
       int s = slot + n;
       if (s < 0 || float(s) >= line.z) continue;
-      if (n == -1 && left > 0.06) continue;
-      if (n == 1 && left < uCell - 0.06) continue;
+      if (n == -1 && x - span.x > 0.06) continue;
+      if (n == 1 && span.y - x > 0.06) continue;
       addLetter(int(line.y) + s, x, y, col, covered);
     }
     outColor = vec4(col + uBg * (1.0 - covered), 1.0);

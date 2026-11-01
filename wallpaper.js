@@ -26,7 +26,7 @@
  * ?stretch=1 lets the letters fill it.
  * Keys: H toggles the panel, R overlays the original, Space pauses.
  */
-import { CELL, MAX_LETTERS, MAX_CELLS, TEXELS, ALPHABET, pack } from './letters.js';
+import { MAX_LETTERS, MAX_CELLS, TEXELS, ALPHABET, pack } from './letters.js';
 import { VERT, FRAG } from './shader.js';
 import { PALETTES } from './palettes.js';
 import { menu } from './menu.js';
@@ -247,7 +247,7 @@ function relayout() {
   gl.uniform4fv(u.uRows, layout.rows);
   gl.uniform1i(u.uRowCount, layout.nRows);
   gl.uniform1f(u.uRowPitch, layout.rowPitch);
-  gl.uniform1f(u.uCell, CELL);
+  gl.uniform2fv(u.uSpan, layout.spans);
   gl.uniform1f(u.uGap, shape.gap / 1293);
   document.body.dataset.view = state.view;
   placeLetters();

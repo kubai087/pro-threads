@@ -1,7 +1,8 @@
 /*
  * The letters: each is a few sheets of threads, and pack() lays rows of
  * them out for the shader. Shapes are measured off the original, 2000 x
- * 1293, in its pixels; every letter keeps its cell, 657 x 1293.
+ * 1293, in its pixels; every letter is drawn in a cell, 657 x 1293, and
+ * takes as much of it as its sheets cover.
  */
 
 export const ASPECT = 2000 / 1293;
@@ -15,6 +16,8 @@ const DOME = 80 * PX;               // a dome's big outer corner
 const FOOT = 56 * PX;               // a foot's wide corner by the slit
 const FOOT_TIP = 44 * PX;           // how far a foot's outer side flares out
 const WEDGE = 110 * PX;             // how deep a wedge cuts in from the outer side
+const BEARING = 52 * PX;            // room beside I where it faces another letter
+const ROOM = BEARING / CELL;        // the same, as a fraction of the cell
 
 export const MAX_LETTERS = 10;      // in a typed word
 export const MAX_CELLS = 32;        // across all rows
@@ -149,23 +152,47 @@ function accentsFor(ch) {
 // then three per coloured thread: [x, top, bottom, how blue], [warms
 // from, to, cools again] and [the letter's left and right edges, a seed].
 // An unused sheet or thread starts at x = 1000. Rows are [shift across,
-// first letter, letter count]. `shape` sizes the corners, arches and tips
-// and the gaps between letters and rows, in the original's pixels.
+// first letter, letter count], and spans are each letter's left and right
+// edges in its row. `shape` sizes the corners, arches and tips and the
+// gaps between letters and rows, in the original's pixels.
 export function pack(lines, shape) {
   const gap = shape.gap * PX;
   const rowsOf = lines.slice(0, MAX_ROWS).map((line) => [...line.toUpperCase()]);
   const data = new Float32Array(MAX_CELLS * TEXELS * 4).fill(0);
   const rows = new Float32Array(MAX_ROWS * 4);
-  const widthOf = (n) => n * CELL + Math.max(0, n - 1) * gap;
-  const width = Math.max(...rowsOf.map((r) => widthOf(r.length)));
+  const spans = new Float32Array(MAX_CELLS * 2);
   const columns = { L: [0, 0.5 - S], R: [0.5 + S, 1], F: [0, 1] };
+  // The part of the cell a letter takes: from its leftmost sheet to its
+  // rightmost, and BEARING more on a side facing another letter, where it
+  // stops short of the cell's sides; without the room, a lone stem like I
+  // would read as one more stroke of its neighbour. A space keeps the
+  // whole cell.
+  const extent = (ch, i, n) => {
+    if (ch === ' ') return [0, 1];
+    const sides = (LETTERS[ch] || FALLBACK).map(([cols]) => (typeof cols === 'string' ? columns[cols] : cols));
+    const left = Math.min(...sides.map(([a]) => a));
+    const right = Math.max(...sides.map(([, b]) => b));
+    return [i > 0 ? Math.max(0, left - ROOM) : left, i < n - 1 ? Math.min(1, right + ROOM) : right];
+  };
+  const extentsOf = (chars) => chars.map((ch, i) => extent(ch, i, chars.length));
+  const widthOf = (extents) => extents.reduce(
+    (sum, [left, right]) => sum + (right - left) * CELL,
+    Math.max(0, extents.length - 1) * gap,
+  );
+  const width = Math.max(...rowsOf.map((chars) => widthOf(extentsOf(chars))));
   let cell = 0;
   rowsOf.forEach((chars, row) => {
-    rows.set([(width - widthOf(chars.length)) / 2, cell, chars.length, 0], row * 4);
+    const extents = extentsOf(chars);
+    rows.set([(width - widthOf(extents)) / 2, cell, chars.length, 0], row * 4);
+    let x = 0;
     chars.forEach((ch, i) => {
       if (cell >= MAX_CELLS) return;
-      const x0 = i * (CELL + gap);
+      const [left, right] = extents[i];
+      const w = (right - left) * CELL;
+      const x0 = x - left * CELL;
       const at = cell++;
+      spans.set([x, x + w], at * 2);
+      x += w + gap;
       const texel = (k) => (at * TEXELS + k) * 4;
       for (let k = 0; k < MAX_SHEETS; k++) data[texel(k * 3)] = 1e3;
       for (let k = 0; k < MAX_FIBRES; k++) data[texel(SHEET_TEXELS + k * 3)] = 1e3;
@@ -195,5 +222,5 @@ export function pack(lines, shape) {
   });
   const rowPitch = 1 + shape.rowGap;
   const height = rowsOf.length + (rowsOf.length - 1) * shape.rowGap;
-  return { data, rows, nRows: rowsOf.length, width, height, rowPitch };
+  return { data, rows, spans, nRows: rowsOf.length, width, height, rowPitch };
 }
