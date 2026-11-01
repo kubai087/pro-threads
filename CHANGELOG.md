@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Chinese README** (`README.zh-CN.md`).
 - **Phone layout.** On narrow screens the scene fills the page and the panel opens as a sheet below it from a settings button; touch screens get larger controls and the system's own pickers.
 
+### Changed
+
+- **Clearer letters.** M, N, U, V and W no longer read as plain double or triple columns: M and W dip in the middle, N and U round over at the top and bottom, and V is drawn as an upturned A. T's bar stops short of the cell so TT no longer fuses into one bar, its stem matches Y's, and C's arms line up with E, F and G.
+
 ### Fixed
 
 - **Letter spacing.** Letters are as wide as their threads, so a narrow I no longer sits in a full-width cell with a wide gap either side; it keeps a little room where it faces another letter.
